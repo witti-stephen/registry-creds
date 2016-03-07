@@ -1,23 +1,63 @@
+/*
+Copyright (c) 2016, UPMC Enterprises
+All rights reserved.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name UPMC Enterprises nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL UPMC ENTERPRISES BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+*/
+
 package main
 
 import (
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	"github.com/golang/glog"
+	flag "github.com/spf13/pflag"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/client/unversioned"
+	kubectl_util "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 )
 
-func main() {
+var (
+	flags                = flag.NewFlagSet("", flag.ContinueOnError)
+	cluster              = flags.Bool("use-kubernetes-cluster-service", true, `If true, use the built in kubernetes cluster for creating the client`)
+	argAWSAccountID      = flags.String("aws-account", "", `AWS Account ID`)
+	argKubecfgFile       = flags.String("kubecfg-file", "", `Location of kubecfg file for access to kubernetes master service; --kube_master_url overrides the URL part of this; if neither this nor --kube_master_url are provided, defaults to service account tokens`)
+	argKubeMasterURL     = flags.String("kube-master-url", "", `URL to reach kubernetes master. Env variables in this flag will be expanded.`)
+	argDefaultSecretName = flags.String("default-secret-name", "awsecr-creds", `Default secret name`)
+	argDefaultNamespace  = flags.String("default-namespace", "default", `Default namespace`)
+	argAWSRegion         = flags.String("aws-region", "us-east-1", `Default namespace`)
+)
 
-	glog.Info("Starting up...")
+var kubeClient *unversioned.Client
 
-	svc := ecr.New(session.New(), aws.NewConfig().WithRegion("us-east-1"))
+func getECRAuthorizationKey() (token *ecr.AuthorizationData, err error) {
+	svc := ecr.New(session.New(), aws.NewConfig().WithRegion(*argAWSRegion))
 
 	params := &ecr.GetAuthorizationTokenInput{
 		RegistryIds: []*string{
-			aws.String("886767563803"),
+			aws.String(*argAWSAccountID),
 		},
 	}
 
@@ -30,6 +70,92 @@ func main() {
 		return
 	}
 
-	// Pretty-print the response data.
-	fmt.Println(resp.AuthorizationData[0].AuthorizationToken)
+	token = resp.AuthorizationData[0]
+
+	return
+}
+
+// Gets the default secret from the api
+func getSecret() (*api.Secret, error) {
+	secret, err := kubeClient.Secrets(*argDefaultNamespace).Get(*argDefaultSecretName)
+	return secret, err
+}
+
+func getSecretObj(dockerConfigJSONContent []byte) *api.Secret {
+	secret := &api.Secret{
+		ObjectMeta: api.ObjectMeta{
+			Name: *argDefaultSecretName,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": dockerConfigJSONContent,
+		},
+		Type: "kubernetes.io/dockerconfigjson",
+	}
+
+	return secret
+}
+
+func process() {
+	// Get new token to seed the secret
+	dockerJSONTemplate := `{"auths":{"%v":{"auth":"%v","email":"none"}}}`
+
+	newToken, _ := getECRAuthorizationKey()
+	authToken := fmt.Sprintf(dockerJSONTemplate, *newToken.ProxyEndpoint, *newToken.AuthorizationToken)
+	newSecret := getSecretObj([]byte(authToken))
+
+	// Check if the default secret exists
+	_, err := getSecret()
+
+	if err != nil {
+		// Secret not found, create
+		kubeClient.Secrets(*argDefaultNamespace).Create(newSecret)
+	} else {
+		// Existing secret needs updated
+		kubeClient.Secrets(*argDefaultNamespace).Update(newSecret)
+	}
+
+	// Check if ServiceAccount has the imagePullSecrets
+	serviceAccount, err := kubeClient.ServiceAccounts(*argDefaultNamespace).Get("default")
+
+	if err != nil {
+		glog.Fatalf("Could get find default service account!")
+	}
+
+	serviceAccount.ImagePullSecrets = []api.LocalObjectReference{{Name: *argDefaultSecretName}}
+	_, err = kubeClient.ServiceAccounts(*argDefaultNamespace).Update(serviceAccount)
+
+	if err != nil {
+		fmt.Println("err: ", err)
+	}
+}
+
+func main() {
+	clientConfig := kubectl_util.DefaultClientConfig(flags)
+	flags.Parse(os.Args)
+	glog.Info("Starting up...")
+
+	var err error
+
+	if *cluster {
+		if kubeClient, err = unversioned.NewInCluster(); err != nil {
+			glog.Fatalf("Failed to create client: %v", err)
+		}
+	} else {
+		config, err := clientConfig.ClientConfig()
+		if err != nil {
+			glog.Fatalf("error connecting to the client: %v", err)
+		}
+		kubeClient, err = unversioned.New(config)
+	}
+
+	tick := time.Tick(10 * time.Second)
+
+	for {
+		select {
+		case <-tick:
+			glog.Info("Refreshing credentials...")
+			process()
+		}
+	}
+
 }
