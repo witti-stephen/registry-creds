@@ -40,6 +40,10 @@ Allow for AWS ECR credentials to be refreshed inside your Kubernetes cluster via
   }
   ```
 
+## DockerHub Image
+
+- https://hub.docker.com/r/upmcenterprises/awsecr-creds/
+
 ## About
 
 Built by UPMC Enterprises in Pittsburgh, PA. http://enterprises.upmc.com/
