@@ -12,15 +12,17 @@ Allow for AWS ECR credentials to be refreshed inside your Kubernetes cluster via
 
 ## How to setup
 
-1. Edit the sample [replication controller](k8s/replicationController.yml) and update with your AWS account id
+1. Clone the repo and navigate to directory
 
-2. Create the replication controller
+2. Edit the sample [replication controller](k8s/replicationController.yml) and update with your AWS account id
+
+3. Create the replication controller
 
   ```bash
   kubectl create -f k8s/replicationController.yml
   ```
 
-3. Make sure your EC2 instances have the following IAM permissions:
+4. Make sure your EC2 instances have the following IAM permissions:
 
   ```json
   {
