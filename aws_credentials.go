@@ -48,6 +48,7 @@ var (
 	argDefaultSecretName = flags.String("default-secret-name", "awsecr-creds", `Default secret name`)
 	argDefaultNamespace  = flags.String("default-namespace", "default", `Default namespace`)
 	argAWSRegion         = flags.String("aws-region", "us-east-1", `Default namespace`)
+	argRefreshMinutes    = flags.Int("refresh-mins", 715, `Default time to wait before refreshing (11 hours 55 mins)`)
 )
 
 var kubeClient *unversioned.Client
@@ -130,9 +131,13 @@ func process() {
 }
 
 func main() {
+	glog.Info("Starting up...")
+
 	clientConfig := kubectl_util.DefaultClientConfig(flags)
 	flags.Parse(os.Args)
-	glog.Info("Starting up...")
+
+	glog.Info("Using AWS Account: ", *argAWSAccountID)
+	glog.Info("Refresh Interval (minutes): ", *argRefreshMinutes)
 
 	var err error
 
@@ -148,7 +153,10 @@ func main() {
 		kubeClient, err = unversioned.New(config)
 	}
 
-	tick := time.Tick(10 * time.Second)
+	tick := time.Tick(time.Duration(*argRefreshMinutes) * time.Minute)
+
+	// Process once now, then wait for tick
+	process()
 
 	for {
 		select {
