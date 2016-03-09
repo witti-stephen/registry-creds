@@ -115,18 +115,29 @@ func process() {
 		kubeClient.Secrets(*argDefaultNamespace).Update(newSecret)
 	}
 
-	// Check if ServiceAccount has the imagePullSecrets
-	serviceAccount, err := kubeClient.ServiceAccounts(*argDefaultNamespace).Get("default")
+	// Get all namespaces
+	namespaces, err := kubeClient.Namespaces().List(api.ListOptions{})
 
-	if err != nil {
-		glog.Fatalf("Could get find default service account!")
-	}
+	for _, namespace := range namespaces.Items {
 
-	serviceAccount.ImagePullSecrets = []api.LocalObjectReference{{Name: *argDefaultSecretName}}
-	_, err = kubeClient.ServiceAccounts(*argDefaultNamespace).Update(serviceAccount)
+		if namespace.GetName() == "kube-system" {
+			continue
+		}
 
-	if err != nil {
-		fmt.Println("err: ", err)
+		// Check if ServiceAccount has the imagePullSecrets
+		serviceAccount, err := kubeClient.ServiceAccounts(namespace.GetName()).Get("default")
+
+		if err != nil {
+			glog.Fatalf("Could get find default service account!")
+		}
+
+		serviceAccount.ImagePullSecrets = []api.LocalObjectReference{{Name: *argDefaultSecretName}}
+		_, err = kubeClient.ServiceAccounts(namespace.GetName()).Update(serviceAccount)
+
+		if err != nil {
+			fmt.Println("err: ", err)
+		}
+
 	}
 }
 
