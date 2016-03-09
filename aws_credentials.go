@@ -77,8 +77,8 @@ func getECRAuthorizationKey() (token *ecr.AuthorizationData, err error) {
 }
 
 // Gets the default secret from the api
-func getSecret() (*api.Secret, error) {
-	secret, err := kubeClient.Secrets(*argDefaultNamespace).Get(*argDefaultSecretName)
+func getSecret(namespace string) (*api.Secret, error) {
+	secret, err := kubeClient.Secrets(namespace).Get(*argDefaultSecretName)
 	return secret, err
 }
 
@@ -104,24 +104,24 @@ func process() {
 	authToken := fmt.Sprintf(dockerJSONTemplate, *newToken.ProxyEndpoint, *newToken.AuthorizationToken)
 	newSecret := getSecretObj([]byte(authToken))
 
-	// Check if the default secret exists
-	_, err := getSecret()
-
-	if err != nil {
-		// Secret not found, create
-		kubeClient.Secrets(*argDefaultNamespace).Create(newSecret)
-	} else {
-		// Existing secret needs updated
-		kubeClient.Secrets(*argDefaultNamespace).Update(newSecret)
-	}
-
 	// Get all namespaces
-	namespaces, err := kubeClient.Namespaces().List(api.ListOptions{})
+	namespaces, _ := kubeClient.Namespaces().List(api.ListOptions{})
 
 	for _, namespace := range namespaces.Items {
 
 		if namespace.GetName() == "kube-system" {
 			continue
+		}
+
+		// Check if the secret exists for the namespace
+		_, err := getSecret(namespace.GetName())
+
+		if err != nil {
+			// Secret not found, create
+			kubeClient.Secrets(namespace.GetName()).Create(newSecret)
+		} else {
+			// Existing secret needs updated
+			kubeClient.Secrets(namespace.GetName()).Update(newSecret)
 		}
 
 		// Check if ServiceAccount has the imagePullSecrets
