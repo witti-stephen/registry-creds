@@ -10,7 +10,7 @@ Allow for AWS ECR credentials to be refreshed inside your Kubernetes cluster via
 - Whenever a pod is created, this secret is attached to the pod
 - The container will refresh the credentials by default every 11 hours 55 minutes since they expire at 12 hours
 
-## How to setup
+## How to setup running in AWS
 
 1. Clone the repo and navigate to directory
 
@@ -39,6 +39,13 @@ Allow for AWS ECR credentials to be refreshed inside your Kubernetes cluster via
    "Resource": "*"
   }
   ```
+
+### Note:
+If you are not running in AWS Cloud, then you can still use this tool! Simply add the following environment variables to your replication controller:
+```
+AWS_ACCESS_KEY_ID=AKID1234567890
+AWS_SECRET_ACCESS_KEY=MY-SECRET-KEY
+```
 
 ## DockerHub Image
 
