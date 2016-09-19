@@ -3,12 +3,14 @@ Allow for AWS ECR credentials to be refreshed inside your Kubernetes cluster via
 
 ## How it works
 
-1. The tool runs as a container in the `kube-system` namespace.
+1. The tool runs as a pod in the `kube-system` namespace.
 - It gets credentials from AWS ECR via the aws-go sdk
 - Next it creates a secret named `awsecr-creds` (by default)
 - Then it sets up this secret to be used in the `ImagePullSecrets` for the default service account
 - Whenever a pod is created, this secret is attached to the pod
 - The container will refresh the credentials by default every 11 hours 55 minutes since they expire at 12 hours
+
+_NOTE: This will setup credentials across ALL namespaces!_
 
 ## How to setup running in AWS
 

@@ -5,7 +5,6 @@ metadata:
   namespace: kube-system
   labels:
     version: v1.0
-    kubernetes.io/cluster-service: "true"
 spec:
   replicas: 1
   selector:
@@ -16,11 +15,15 @@ spec:
       labels:
         name: awsecr-creds
         version: v1.0
-        kubernetes.io/cluster-service: "true"
     spec:
       containers:
       - image: upmcenterprises/awsecr-creds:1.0
         name: awsecr-creds
         args:
-        - --aws-account=[YourAWSAccountId]
+        - --aws-account=<AWSAccount>
         imagePullPolicy: Always
+        env:
+          - name: AWS_ACCESS_KEY_ID
+            value: <YourKey>
+          - name: AWS_SECRET_ACCESS_KEY
+            value: <YourAccessKey>
