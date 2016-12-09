@@ -9,6 +9,7 @@ Allow for AWS ECR credentials to be refreshed inside your Kubernetes cluster via
 - Then it sets up this secret to be used in the `ImagePullSecrets` for the default service account
 - Whenever a pod is created, this secret is attached to the pod
 - The container will refresh the credentials by default every 11 hours 55 minutes since they expire at 12 hours
+- Enabled for use with Minikube as an addon (https://github.com/kubernetes/minikube#add-ons)
 
 _NOTE: This will setup credentials across ALL namespaces!_
 
@@ -16,15 +17,7 @@ _NOTE: This will setup credentials across ALL namespaces!_
 
 1. Clone the repo and navigate to directory
 
-2. Edit the sample [replication controller](k8s/replicationController.yml) and update with your AWS account id
-
-3. Create the replication controller
-
-  ```bash
-  kubectl create -f k8s/replicationController.yml
-  ```
-
-4. Make sure your EC2 instances have the following IAM permissions:
+2a. If running on AWS EC2, make sure your EC2 instances have the following IAM permissions:
 
   ```json
   {
@@ -42,12 +35,19 @@ _NOTE: This will setup credentials across ALL namespaces!_
   }
   ```
 
-### Note:
-If you are not running in AWS Cloud, then you can still use this tool! Simply add the following environment variables to your replication controller:
+2b. If you are not running in AWS Cloud, then you can still use this tool! Edit & create the sample [secret](k8s/secret.yaml) and update values for AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS Account Id (base64 encoded)
+
+```bash
+echo -n "secret-key" | base64
+
+kubectl create -f k8s/secret.yaml
 ```
-AWS_ACCESS_KEY_ID=AKID1234567890
-AWS_SECRET_ACCESS_KEY=MY-SECRET-KEY
-```
+
+3. Create the replication controller. NOTE: If running on prem, no need to provide AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY since that will come from the EC2 instance.
+
+  ```bash
+  kubectl create -f k8s/replicationController.yml
+  ```
 
 ## DockerHub Image
 
