@@ -26,13 +26,13 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/golang/glog"
 	flag "github.com/spf13/pflag"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/unversioned"
@@ -42,7 +42,6 @@ import (
 var (
 	flags                = flag.NewFlagSet("", flag.ContinueOnError)
 	cluster              = flags.Bool("use-kubernetes-cluster-service", true, `If true, use the built in kubernetes cluster for creating the client`)
-	argAWSAccountID      = flags.String("aws-account", "", `AWS Account ID`)
 	argKubecfgFile       = flags.String("kubecfg-file", "", `Location of kubecfg file for access to kubernetes master service; --kube_master_url overrides the URL part of this; if neither this nor --kube_master_url are provided, defaults to service account tokens`)
 	argKubeMasterURL     = flags.String("kube-master-url", "", `URL to reach kubernetes master. Env variables in this flag will be expanded.`)
 	argDefaultSecretName = flags.String("default-secret-name", "awsecr-creds", `Default secret name`)
@@ -51,14 +50,17 @@ var (
 	argRefreshMinutes    = flags.Int("refresh-mins", 715, `Default time to wait before refreshing (11 hours 55 mins)`)
 )
 
-var kubeClient *unversioned.Client
+var (
+	kubeClient   *unversioned.Client
+	awsAccountID string
+)
 
 func getECRAuthorizationKey() (token *ecr.AuthorizationData, err error) {
 	svc := ecr.New(session.New(), aws.NewConfig().WithRegion(*argAWSRegion))
 
 	params := &ecr.GetAuthorizationTokenInput{
 		RegistryIds: []*string{
-			aws.String(*argAWSAccountID),
+			aws.String(awsAccountID),
 		},
 	}
 
@@ -128,7 +130,7 @@ func process() {
 		serviceAccount, err := kubeClient.ServiceAccounts(namespace.GetName()).Get("default")
 
 		if err != nil {
-			glog.Fatalf("Could get find default service account!")
+			log.Fatalf("Could get find default service account!")
 		}
 
 		serviceAccount.ImagePullSecrets = []api.LocalObjectReference{{Name: *argDefaultSecretName}}
@@ -142,24 +144,26 @@ func process() {
 }
 
 func main() {
-	glog.Info("Starting up...")
-
-	clientConfig := kubectl_util.DefaultClientConfig(flags)
+	log.Print("Starting up...")
 	flags.Parse(os.Args)
 
-	glog.Info("Using AWS Account: ", *argAWSAccountID)
-	glog.Info("Refresh Interval (minutes): ", *argRefreshMinutes)
+	awsAccountID = os.Getenv("awsaccount")
+
+	log.Print("Using AWS Account: ", awsAccountID)
+	log.Print("Refresh Interval (minutes): ", *argRefreshMinutes)
+
+	clientConfig := kubectl_util.DefaultClientConfig(flags)
 
 	var err error
 
 	if *cluster {
 		if kubeClient, err = unversioned.NewInCluster(); err != nil {
-			glog.Fatalf("Failed to create client: %v", err)
+			log.Fatalf("Failed to create client: %v", err)
 		}
 	} else {
 		config, err := clientConfig.ClientConfig()
 		if err != nil {
-			glog.Fatalf("error connecting to the client: %v", err)
+			log.Fatalf("error connecting to the client: %v", err)
 		}
 		kubeClient, err = unversioned.New(config)
 	}
@@ -172,7 +176,7 @@ func main() {
 	for {
 		select {
 		case <-tick:
-			glog.Info("Refreshing credentials...")
+			log.Print("Refreshing credentials...")
 			process()
 		}
 	}

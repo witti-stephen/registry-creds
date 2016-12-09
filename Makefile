@@ -2,17 +2,17 @@
 # MAINTAINER: Steve Sloka <slokas@upmc.edu>
 # If you update this image please bump the tag value before pushing.
 
-.PHONY: all emmie container push clean test
+.PHONY: all binary container push clean test
 
-TAG = 1.0
+TAG = 1.1
 PREFIX = upmcenterprises
 
 all: container
 
-server: aws_credentials.go
+binary: aws_credentials.go
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -installsuffix cgo --ldflags '-w' ./aws_credentials.go
 
-container: aws_credentials
+container: binary
 	docker build -t $(PREFIX)/awsecr-creds:$(TAG) .
 
 push:
