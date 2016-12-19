@@ -126,20 +126,32 @@ func process() {
 			kubeClient.Secrets(namespace.GetName()).Update(newSecret)
 		}
 
-		// Check if ServiceAccount has the imagePullSecrets
+		// Check if ServiceAccount exists
 		serviceAccount, err := kubeClient.ServiceAccounts(namespace.GetName()).Get("default")
 
 		if err != nil {
-			log.Fatalf("Could get find default service account!")
+			log.Fatalf("Couldn't get default service account!")
 		}
 
-		serviceAccount.ImagePullSecrets = []api.LocalObjectReference{{Name: *argDefaultSecretName}}
-		_, err = kubeClient.ServiceAccounts(namespace.GetName()).Update(serviceAccount)
+		// Update existing one if image pull secrets already exists for aws ecr token
+		imagePullSecretFound := false
+		for i, imagePullSecret := range serviceAccount.ImagePullSecrets {
+			if imagePullSecret.Name == *argDefaultSecretName {
+				serviceAccount.ImagePullSecrets[i] = api.LocalObjectReference{Name: *argDefaultSecretName}
+				imagePullSecretFound = true
+				break
+			}
+		}
 
+		// Append to list of existing service accounts if there isn't one already
+		if !imagePullSecretFound {
+			serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, api.LocalObjectReference{Name: *argDefaultSecretName})
+		}
+
+		_, err = kubeClient.ServiceAccounts(namespace.GetName()).Update(serviceAccount)
 		if err != nil {
 			fmt.Println("err: ", err)
 		}
-
 	}
 }
 
