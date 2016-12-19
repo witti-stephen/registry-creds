@@ -4,20 +4,20 @@ metadata:
   name: awsecr-creds
   namespace: kube-system
   labels:
-    version: v1.0
+    version: v1.2
 spec:
   replicas: 1
   selector:
     name: awsecr-creds
-    version: v1.0
+    version: v1.2
   template:
     metadata:
       labels:
         name: awsecr-creds
-        version: v1.0
+        version: v1.2
     spec:
       containers:
-      - image: upmcenterprises/awsecr-creds:1.1
+      - image: upmcenterprises/awsecr-creds:1.2
         name: awsecr-creds
         imagePullPolicy: Always
         env:
