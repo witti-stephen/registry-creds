@@ -35,8 +35,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/ecr"
 	flag "github.com/spf13/pflag"
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/client/restclient"
 	"k8s.io/kubernetes/pkg/client/unversioned"
 	kubectl_util "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+)
+
+const (
+	dockerJSONTemplate = `{"auths":{"%s":{"auth":"%s","email":"none"}}}`
 )
 
 var (
@@ -51,20 +56,62 @@ var (
 )
 
 var (
-	kubeClient   *unversioned.Client
 	awsAccountID string
 )
 
-func getECRAuthorizationKey() (token *ecr.AuthorizationData, err error) {
-	svc := ecr.New(session.New(), aws.NewConfig().WithRegion(*argAWSRegion))
+type controller struct {
+	kubeClient kubeInterface
+	ecrClient  ecrInterface
+}
 
+type kubeInterface interface {
+	Secrets(namespace string) unversioned.SecretsInterface
+	Namespaces() unversioned.NamespaceInterface
+	ServiceAccounts(namespace string) unversioned.ServiceAccountsInterface
+}
+
+type ecrInterface interface {
+	GetAuthorizationToken(input *ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error)
+}
+
+func newEcrClient() ecrInterface {
+	return ecr.New(session.New(), aws.NewConfig().WithRegion(*argAWSRegion))
+}
+
+func newKubeClient() kubeInterface {
+	var kubeClient *unversioned.Client
+	var config *restclient.Config
+	var err error
+
+	clientConfig := kubectl_util.DefaultClientConfig(flags)
+
+	if *cluster {
+		if kubeClient, err = unversioned.NewInCluster(); err != nil {
+			log.Fatalf("Failed to create client: %v", err)
+		}
+	} else {
+		config, err = clientConfig.ClientConfig()
+		if err != nil {
+			log.Fatalf("error connecting to the client: %v", err)
+		}
+		kubeClient, err = unversioned.New(config)
+
+		if err != nil {
+			log.Fatalf("Failed to create client: %v", err)
+		}
+	}
+
+	return kubeClient
+}
+
+func (c *controller) getECRAuthorizationKey() (token *ecr.AuthorizationData, err error) {
 	params := &ecr.GetAuthorizationTokenInput{
 		RegistryIds: []*string{
 			aws.String(awsAccountID),
 		},
 	}
 
-	resp, err := svc.GetAuthorizationToken(params)
+	resp, err := c.ecrClient.GetAuthorizationToken(params)
 
 	if err != nil {
 		// Print the error, cast err to awserr.Error to get the Code and
@@ -78,19 +125,15 @@ func getECRAuthorizationKey() (token *ecr.AuthorizationData, err error) {
 	return
 }
 
-// Gets the default secret from the api
-func getSecret(namespace string) (*api.Secret, error) {
-	secret, err := kubeClient.Secrets(namespace).Get(*argDefaultSecretName)
-	return secret, err
-}
+func generateSecretObj(token *ecr.AuthorizationData) *api.Secret {
+	dockerConfigJSONContent := fmt.Sprintf(dockerJSONTemplate, *token.ProxyEndpoint, *token.AuthorizationToken)
 
-func getSecretObj(dockerConfigJSONContent []byte) *api.Secret {
 	secret := &api.Secret{
 		ObjectMeta: api.ObjectMeta{
 			Name: *argDefaultSecretName,
 		},
 		Data: map[string][]byte{
-			".dockerconfigjson": dockerConfigJSONContent,
+			".dockerconfigjson": []byte(dockerConfigJSONContent),
 		},
 		Type: "kubernetes.io/dockerconfigjson",
 	}
@@ -98,16 +141,15 @@ func getSecretObj(dockerConfigJSONContent []byte) *api.Secret {
 	return secret
 }
 
-func process() {
-	// Get new token to seed the secret
-	dockerJSONTemplate := `{"auths":{"%v":{"auth":"%v","email":"none"}}}`
-
-	newToken, _ := getECRAuthorizationKey()
-	authToken := fmt.Sprintf(dockerJSONTemplate, *newToken.ProxyEndpoint, *newToken.AuthorizationToken)
-	newSecret := getSecretObj([]byte(authToken))
+func (c *controller) process() error {
+	newToken, _ := c.getECRAuthorizationKey()
+	newSecret := generateSecretObj(newToken)
 
 	// Get all namespaces
-	namespaces, _ := kubeClient.Namespaces().List(api.ListOptions{})
+	namespaces, err := c.kubeClient.Namespaces().List(api.ListOptions{})
+	if err != nil {
+		return err
+	}
 
 	for _, namespace := range namespaces.Items {
 
@@ -116,21 +158,27 @@ func process() {
 		}
 
 		// Check if the secret exists for the namespace
-		_, err := getSecret(namespace.GetName())
+		_, err := c.kubeClient.Secrets(namespace.GetName()).Get(*argDefaultSecretName)
 
 		if err != nil {
 			// Secret not found, create
-			kubeClient.Secrets(namespace.GetName()).Create(newSecret)
+			_, err := c.kubeClient.Secrets(namespace.GetName()).Create(newSecret)
+			if err != nil {
+				return err
+			}
 		} else {
 			// Existing secret needs updated
-			kubeClient.Secrets(namespace.GetName()).Update(newSecret)
+			_, err := c.kubeClient.Secrets(namespace.GetName()).Update(newSecret)
+			if err != nil {
+				return err
+			}
 		}
 
 		// Check if ServiceAccount exists
-		serviceAccount, err := kubeClient.ServiceAccounts(namespace.GetName()).Get("default")
+		serviceAccount, err := c.kubeClient.ServiceAccounts(namespace.GetName()).Get("default")
 
 		if err != nil {
-			log.Fatalf("Couldn't get default service account!")
+			return err
 		}
 
 		// Update existing one if image pull secrets already exists for aws ecr token
@@ -148,11 +196,13 @@ func process() {
 			serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, api.LocalObjectReference{Name: *argDefaultSecretName})
 		}
 
-		_, err = kubeClient.ServiceAccounts(namespace.GetName()).Update(serviceAccount)
+		_, err = c.kubeClient.ServiceAccounts(namespace.GetName()).Update(serviceAccount)
 		if err != nil {
-			fmt.Println("err: ", err)
+			return err
 		}
 	}
+
+	return nil
 }
 
 func main() {
@@ -164,32 +214,24 @@ func main() {
 	log.Print("Using AWS Account: ", awsAccountID)
 	log.Print("Refresh Interval (minutes): ", *argRefreshMinutes)
 
-	clientConfig := kubectl_util.DefaultClientConfig(flags)
+	ecrClient := newEcrClient()
+	kubeClient := newKubeClient()
 
-	var err error
-
-	if *cluster {
-		if kubeClient, err = unversioned.NewInCluster(); err != nil {
-			log.Fatalf("Failed to create client: %v", err)
-		}
-	} else {
-		config, err := clientConfig.ClientConfig()
-		if err != nil {
-			log.Fatalf("error connecting to the client: %v", err)
-		}
-		kubeClient, err = unversioned.New(config)
-	}
+	c := &controller{kubeClient, ecrClient}
+	c.process()
 
 	tick := time.Tick(time.Duration(*argRefreshMinutes) * time.Minute)
 
 	// Process once now, then wait for tick
-	process()
+	c.process()
 
 	for {
 		select {
 		case <-tick:
 			log.Print("Refreshing credentials...")
-			process()
+			if err := c.process(); err != nil {
+				log.Fatalf("Failed to load ecr credentials: %v", err)
+			}
 		}
 	}
 
