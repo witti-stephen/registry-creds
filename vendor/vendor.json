@@ -537,6 +537,13 @@
 			"revisionTime": "2016-10-06T10:29:19Z"
 		},
 		{
+			"checksumSHA1": "zKKp5SZ3d3ycKe4EKMNT0BqAWBw=",
+			"origin": "github.com/stretchr/testify/vendor/github.com/pmezard/go-difflib/difflib",
+			"path": "github.com/pmezard/go-difflib/difflib",
+			"revision": "2402e8e7a02fc811447d11f881aa9746cdc57983",
+			"revisionTime": "2016-12-17T20:04:45Z"
+		},
+		{
 			"checksumSHA1": "Xcw6bb1nAu+k4JKNyscU6nLQWjc=",
 			"origin": "k8s.io/kubernetes/vendor/github.com/spf13/cobra",
 			"path": "github.com/spf13/cobra",
@@ -548,6 +555,12 @@
 			"path": "github.com/spf13/pflag",
 			"revision": "dabebe21bf790f782ea4c7bbd2efc430de182afd",
 			"revisionTime": "2016-10-18T23:08:44Z"
+		},
+		{
+			"checksumSHA1": "JXUVA1jky8ZX8w09p2t5KLs97Nc=",
+			"path": "github.com/stretchr/testify/assert",
+			"revision": "2402e8e7a02fc811447d11f881aa9746cdc57983",
+			"revisionTime": "2016-12-17T20:04:45Z"
 		},
 		{
 			"checksumSHA1": "0bs9QxbsLB3lMUU7vOo3gurUzEo=",
@@ -1754,5 +1767,5 @@
 			"revisionTime": "2016-09-30T13:57:09Z"
 		}
 	],
-	"rootPath": "enterprises.io/awsecr-creds"
+	"rootPath": "github.com/upmc-enterprises/awsecr-creds"
 }
