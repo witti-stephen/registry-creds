@@ -13,6 +13,15 @@ Allow for AWS ECR credentials to be refreshed inside your Kubernetes cluster via
 
 _NOTE: This will setup credentials across ALL namespaces!_
 
+## Parameters
+
+The following parameters are driven via Environment variables.
+
+- Environment Variables:
+  - AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY: Credentials to access AWS
+  - awsaccount: AWS Account Id 
+  - awsregion: (optional) Can override the default aws region by setting this variable. Note: The region can also be specified as an arg to the binary.  
+
 ## How to setup running in AWS
 
 1. Clone the repo and navigate to directory
