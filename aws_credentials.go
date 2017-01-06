@@ -205,34 +205,33 @@ func (c *controller) process() error {
 	return nil
 }
 
-func main() {
-	log.Print("Starting up...")
-	flags.Parse(os.Args)
-
+func validateParams() {
 	awsAccountID = os.Getenv("awsaccount")
 	if len(awsAccountID) == 0 {
 		log.Fatal("Missing awsAccountId!")
 	}
 
-	log.Printf("awsAccountId: %s", awsAccountID)
-
 	awsRegionEnv := os.Getenv("awsregion")
 
 	if len(awsRegionEnv) > 0 {
-		log.Printf("Environment variable for AWS Region found, overwriting args: %s", awsRegionEnv)
 		argAWSRegion = &awsRegionEnv
-	} else {
-		log.Printf("Environment variable for awsRegion not found, using args: %s", *argAWSRegion)
 	}
+}
+
+func main() {
+	log.Print("Starting up...")
+	flags.Parse(os.Args)
+
+	validateParams()
 
 	log.Print("Using AWS Account: ", awsAccountID)
+	log.Printf("Using AWS Region: %s", *argAWSRegion)
 	log.Print("Refresh Interval (minutes): ", *argRefreshMinutes)
 
 	ecrClient := newEcrClient()
 	kubeClient := newKubeClient()
 
 	c := &controller{kubeClient, ecrClient}
-	c.process()
 
 	tick := time.Tick(time.Duration(*argRefreshMinutes) * time.Minute)
 

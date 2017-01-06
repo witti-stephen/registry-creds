@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -392,4 +393,18 @@ func TestProcessWithExistingImagePullSecrets(t *testing.T) {
 	assert.Equal(t, 2, len(serviceAccount.ImagePullSecrets))
 	assert.Equal(t, "someOtherSecret", serviceAccount.ImagePullSecrets[0].Name)
 	assert.Equal(t, *argDefaultSecretName, serviceAccount.ImagePullSecrets[1].Name)
+}
+
+func TestDefaultAwsRegionFromArgs(t *testing.T) {
+	assert.Equal(t, "us-east-1", *argAWSRegion)
+}
+
+func TestAwsRegionFromEnv(t *testing.T) {
+	expectedRegion := "us-steve-1"
+
+	os.Setenv("awsaccount", "12345678")
+	os.Setenv("awsregion", expectedRegion)
+	validateParams()
+
+	assert.Equal(t, expectedRegion, *argAWSRegion)
 }
