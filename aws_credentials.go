@@ -34,6 +34,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	flag "github.com/spf13/pflag"
+	"golang.org/x/net/context"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/restclient"
 	"k8s.io/kubernetes/pkg/client/unversioned"
@@ -41,18 +44,21 @@ import (
 )
 
 const (
+	dockerCfgTemplate  = `{"%s":{"username":"oauth2accesstoken","password":"%s","email":"none"}}`
 	dockerJSONTemplate = `{"auths":{"%s":{"auth":"%s","email":"none"}}}`
 )
 
 var (
-	flags                = flag.NewFlagSet("", flag.ContinueOnError)
-	cluster              = flags.Bool("use-kubernetes-cluster-service", true, `If true, use the built in kubernetes cluster for creating the client`)
-	argKubecfgFile       = flags.String("kubecfg-file", "", `Location of kubecfg file for access to kubernetes master service; --kube_master_url overrides the URL part of this; if neither this nor --kube_master_url are provided, defaults to service account tokens`)
-	argKubeMasterURL     = flags.String("kube-master-url", "", `URL to reach kubernetes master. Env variables in this flag will be expanded.`)
-	argDefaultSecretName = flags.String("default-secret-name", "awsecr-creds", `Default secret name`)
-	argDefaultNamespace  = flags.String("default-namespace", "default", `Default namespace`)
-	argAWSRegion         = flags.String("aws-region", "us-east-1", `Default AWS region`)
-	argRefreshMinutes    = flags.Int("refresh-mins", 715, `Default time to wait before refreshing (11 hours 55 mins)`)
+	flags               = flag.NewFlagSet("", flag.ContinueOnError)
+	cluster             = flags.Bool("use-kubernetes-cluster-service", true, `If true, use the built in kubernetes cluster for creating the client`)
+	argKubecfgFile      = flags.String("kubecfg-file", "", `Location of kubecfg file for access to kubernetes master service; --kube_master_url overrides the URL part of this; if neither this nor --kube_master_url are provided, defaults to service account tokens`)
+	argKubeMasterURL    = flags.String("kube-master-url", "", `URL to reach kubernetes master. Env variables in this flag will be expanded.`)
+	argAWSSecretName    = flags.String("aws-secret-name", "awsecr-cred", `Default aws secret name`)
+	argGCRSecretName    = flags.String("gcr-secret-name", "gcr-secret", `Default gcr secret name`)
+	argDefaultNamespace = flags.String("default-namespace", "default", `Default namespace`)
+	argGCRURL           = flags.String("gcr-url", "https://gcr.io", `Default GCR URL`)
+	argAWSRegion        = flags.String("aws-region", "us-east-1", `Default AWS region`)
+	argRefreshMinutes   = flags.Int("refresh-mins", 60, `Default time to wait before refreshing (60 minutes)`)
 )
 
 var (
@@ -62,6 +68,7 @@ var (
 type controller struct {
 	kubeClient kubeInterface
 	ecrClient  ecrInterface
+	gcrClient  gcrInterface
 }
 
 type kubeInterface interface {
@@ -74,8 +81,22 @@ type ecrInterface interface {
 	GetAuthorizationToken(input *ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error)
 }
 
+type gcrInterface interface {
+	DefaultTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error)
+}
+
 func newEcrClient() ecrInterface {
 	return ecr.New(session.New(), aws.NewConfig().WithRegion(*argAWSRegion))
+}
+
+type gcrClient struct{}
+
+func (gcr gcrClient) DefaultTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error) {
+	return google.DefaultTokenSource(ctx, scope...)
+}
+
+func newGcrClient() gcrInterface {
+	return gcrClient{}
 }
 
 func newKubeClient() kubeInterface {
@@ -104,7 +125,31 @@ func newKubeClient() kubeInterface {
 	return kubeClient
 }
 
-func (c *controller) getECRAuthorizationKey() (token *ecr.AuthorizationData, err error) {
+func (c *controller) getGCRAuthorizationKey() (AuthToken, error) {
+	ts, err := c.gcrClient.DefaultTokenSource(context.TODO(), "https://www.googleapis.com/auth/cloud-platform")
+	if err != nil {
+		return AuthToken{}, err
+	}
+
+	token, err := ts.Token()
+	if err != nil {
+		return AuthToken{}, err
+	}
+
+	if !token.Valid() {
+		return AuthToken{}, fmt.Errorf("token was invalid")
+	}
+
+	if token.Type() != "Bearer" {
+		return AuthToken{}, fmt.Errorf(fmt.Sprintf("expected token type \"Bearer\" but got \"%s\"", token.Type()))
+	}
+
+	return AuthToken{
+		AccessToken: token.AccessToken,
+		Endpoint:    *argGCRURL}, nil
+}
+
+func (c *controller) getECRAuthorizationKey() (AuthToken, error) {
 	params := &ecr.GetAuthorizationTokenInput{
 		RegistryIds: []*string{
 			aws.String(awsAccountID),
@@ -117,89 +162,122 @@ func (c *controller) getECRAuthorizationKey() (token *ecr.AuthorizationData, err
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		fmt.Println(err.Error())
-		return
+		return AuthToken{}, err
 	}
 
-	token = resp.AuthorizationData[0]
+	token := resp.AuthorizationData[0]
 
-	return
+	return AuthToken{
+		AccessToken: *token.AuthorizationToken,
+		Endpoint:    *token.ProxyEndpoint}, err
 }
 
-func generateSecretObj(token *ecr.AuthorizationData) *api.Secret {
-	dockerConfigJSONContent := fmt.Sprintf(dockerJSONTemplate, *token.ProxyEndpoint, *token.AuthorizationToken)
-
+func generateSecretObj(token string, endpoint string, isJSONCfg bool, secretName string) *api.Secret {
 	secret := &api.Secret{
 		ObjectMeta: api.ObjectMeta{
-			Name: *argDefaultSecretName,
+			Name: secretName,
 		},
-		Data: map[string][]byte{
-			".dockerconfigjson": []byte(dockerConfigJSONContent),
-		},
-		Type: "kubernetes.io/dockerconfigjson",
 	}
-
+	if isJSONCfg {
+		secret.Data = map[string][]byte{
+			".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, endpoint, token))}
+		secret.Type = "kubernetes.io/dockerconfigjson"
+	} else {
+		secret.Data = map[string][]byte{
+			".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, endpoint, token))}
+		secret.Type = "kubernetes.io/dockercfg"
+	}
 	return secret
 }
 
+type AuthToken struct {
+	AccessToken string
+	Endpoint    string
+}
+
+type SecretGenerator struct {
+	TokenGenFxn func() (AuthToken, error)
+	IsJSONCfg   bool
+	SecretName  string
+}
+
 func (c *controller) process() error {
-	newToken, _ := c.getECRAuthorizationKey()
-	newSecret := generateSecretObj(newToken)
-
-	// Get all namespaces
-	namespaces, err := c.kubeClient.Namespaces().List(api.ListOptions{})
-	if err != nil {
-		return err
+	secretGenerators := []SecretGenerator{
+		SecretGenerator{
+			TokenGenFxn: c.getGCRAuthorizationKey,
+			IsJSONCfg:   false,
+			SecretName:  *argGCRSecretName,
+		},
+		SecretGenerator{
+			TokenGenFxn: c.getECRAuthorizationKey,
+			IsJSONCfg:   true,
+			SecretName:  *argAWSSecretName,
+		},
 	}
-
-	for _, namespace := range namespaces.Items {
-
-		if namespace.GetName() == "kube-system" {
-			continue
-		}
-
-		// Check if the secret exists for the namespace
-		_, err := c.kubeClient.Secrets(namespace.GetName()).Get(*argDefaultSecretName)
-
+	for _, secretGenerator := range secretGenerators {
+		newToken, err := secretGenerator.TokenGenFxn()
 		if err != nil {
-			// Secret not found, create
-			_, err := c.kubeClient.Secrets(namespace.GetName()).Create(newSecret)
-			if err != nil {
-				return err
-			}
-		} else {
-			// Existing secret needs updated
-			_, err := c.kubeClient.Secrets(namespace.GetName()).Update(newSecret)
-			if err != nil {
-				return err
-			}
+			return err
 		}
+		newSecret := generateSecretObj(newToken.AccessToken, newToken.Endpoint, secretGenerator.IsJSONCfg, secretGenerator.SecretName)
 
-		// Check if ServiceAccount exists
-		serviceAccount, err := c.kubeClient.ServiceAccounts(namespace.GetName()).Get("default")
-
+		// Get all namespaces
+		namespaces, err := c.kubeClient.Namespaces().List(api.ListOptions{})
 		if err != nil {
 			return err
 		}
 
-		// Update existing one if image pull secrets already exists for aws ecr token
-		imagePullSecretFound := false
-		for i, imagePullSecret := range serviceAccount.ImagePullSecrets {
-			if imagePullSecret.Name == *argDefaultSecretName {
-				serviceAccount.ImagePullSecrets[i] = api.LocalObjectReference{Name: *argDefaultSecretName}
-				imagePullSecretFound = true
-				break
+		for _, namespace := range namespaces.Items {
+
+			if namespace.GetName() == "kube-system" {
+				continue
+			}
+
+			// Check if the secret exists for the namespace
+			_, err := c.kubeClient.Secrets(namespace.GetName()).Get(secretGenerator.SecretName)
+
+			if err != nil {
+				// Secret not found, create
+				_, err := c.kubeClient.Secrets(namespace.GetName()).Create(newSecret)
+				if err != nil {
+					return err
+				}
+			} else {
+				// Existing secret needs updated
+				_, err := c.kubeClient.Secrets(namespace.GetName()).Update(newSecret)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Check if ServiceAccount exists
+			serviceAccount, err := c.kubeClient.ServiceAccounts(namespace.GetName()).Get("default")
+
+			if err != nil {
+				return err
+			}
+
+			// Update existing one if image pull secrets already exists for aws ecr token
+			imagePullSecretFound := false
+			for i, imagePullSecret := range serviceAccount.ImagePullSecrets {
+				if imagePullSecret.Name == secretGenerator.SecretName {
+					serviceAccount.ImagePullSecrets[i] = api.LocalObjectReference{Name: secretGenerator.SecretName}
+					imagePullSecretFound = true
+					break
+				}
+			}
+
+			// Append to list of existing service accounts if there isn't one already
+			if !imagePullSecretFound {
+				serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, api.LocalObjectReference{Name: secretGenerator.SecretName})
+			}
+
+			_, err = c.kubeClient.ServiceAccounts(namespace.GetName()).Update(serviceAccount)
+			if err != nil {
+				return err
 			}
 		}
-
-		// Append to list of existing service accounts if there isn't one already
-		if !imagePullSecretFound {
-			serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, api.LocalObjectReference{Name: *argDefaultSecretName})
-		}
-
-		_, err = c.kubeClient.ServiceAccounts(namespace.GetName()).Update(serviceAccount)
-		if err != nil {
-			return err
-		}
+		log.Print("Finished processing secret for: ", secretGenerator.SecretName)
 	}
 
 	return nil
@@ -208,7 +286,7 @@ func (c *controller) process() error {
 func validateParams() {
 	awsAccountID = os.Getenv("awsaccount")
 	if len(awsAccountID) == 0 {
-		log.Fatal("Missing awsAccountId!")
+		log.Print("Missing awsaccount env variable, assuming GCR usage")
 	}
 
 	awsRegionEnv := os.Getenv("awsregion")
@@ -228,10 +306,10 @@ func main() {
 	log.Printf("Using AWS Region: %s", *argAWSRegion)
 	log.Print("Refresh Interval (minutes): ", *argRefreshMinutes)
 
-	ecrClient := newEcrClient()
 	kubeClient := newKubeClient()
-
-	c := &controller{kubeClient, ecrClient}
+	ecrClient := newEcrClient()
+	gcrClient := newGcrClient()
+	c := &controller{kubeClient, ecrClient, gcrClient}
 
 	tick := time.Tick(time.Duration(*argRefreshMinutes) * time.Minute)
 
