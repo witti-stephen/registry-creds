@@ -4,6 +4,6 @@ MAINTAINER Steve Sloka <slokas@upmc.edu>
 RUN apk add --update ca-certificates && \
   rm -rf /var/cache/apk/*
 
-ADD aws_credentials aws_credentials
+ADD registry-creds registry-creds
 
-ENTRYPOINT ["/aws_credentials"]
+ENTRYPOINT ["/registry-creds"]
