@@ -1,25 +1,25 @@
-# Makefile for the Docker image upmcenterprises/awsecr-creds
+# Makefile for the Docker image upmcenterprises/registry-creds
 # MAINTAINER: Steve Sloka <slokas@upmc.edu>
 # If you update this image please bump the tag value before pushing.
 
 .PHONY: all binary container push clean test
 
-TAG = 1.2
+TAG = 1.4
 PREFIX = upmcenterprises
 
 all: container
 
-binary: aws_credentials.go
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -installsuffix cgo --ldflags '-w' ./aws_credentials.go
+binary: main.go
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -installsuffix cgo -o registry-creds --ldflags '-w' ./main.go
 
 container: binary
-	docker build -t $(PREFIX)/awsecr-creds:$(TAG) .
+	docker build -t $(PREFIX)/registry-creds:$(TAG) .
 
 push:
-	docker push $(PREFIX)/awsecr-creds:$(TAG)
+	docker push $(PREFIX)/registry-creds:$(TAG)
 
 clean:
-	rm -f awsecr-creds
+	rm -f registry-creds
 
 test: clean
 	go test $(go list ./... | grep -v /vendor/)
