@@ -58,6 +58,41 @@ kubectl create -f k8s/secret.yaml
   kubectl create -f k8s/replicationController.yml
   ```
 
+## How to setup running in GCR
+
+1. Clone the repo and navigate to directory
+
+2. Input your application_default_credentials.json information into a secret with the template at k8s/gcr-secret.yaml:
+```bash
+apiVersion: v1
+data:
+  application_default_credentials.json: <base-64 encoded ~/.config/gcloud/application_default_credentials.json>
+kind: Secret
+metadata:
+  name: gcr-secret
+  namespace: kube-system
+  labels:
+    app: gcr-creds
+    version: v1.2
+    kubernetes.io/minikube-addons: gcr-creds
+type: Opaque
+```
+The value for application_default_credentials.json can be obtained with the following command:
+```bash
+base64 -w $HOME/.config/gcloud/application_default_credentials.json
+```
+
+3. Create the secret in kubernetes
+```bash
+kubectl create -f k8s/gcr-secret.yml
+```
+
+3. Create the replication controller:
+
+```bash
+kubectl create -f k8s/replicationController.yml
+```
+
 ## DockerHub Image
 
 - https://hub.docker.com/r/upmcenterprises/awsecr-creds/
