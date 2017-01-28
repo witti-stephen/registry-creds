@@ -265,7 +265,8 @@ func TestgetECRAuthorizationKey(t *testing.T) {
 	kubeClient := newFakeKubeClient()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	token, err := c.getECRAuthorizationKey()
 
@@ -279,7 +280,8 @@ func TestProcessOnce(t *testing.T) {
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	err := c.process()
 	assert.Nil(t, err)
@@ -349,7 +351,8 @@ func TestProcessTwice(t *testing.T) {
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 	err := c.process()
 	assert.Nil(t, err)
 	// test processing twice for idempotency
@@ -420,7 +423,8 @@ func TestProcessWithExistingSecrets(t *testing.T) {
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	secretGCR := &api.Secret{
 		ObjectMeta: api.ObjectMeta{
@@ -526,7 +530,8 @@ func TestProcessNoDefaultServiceAccount(t *testing.T) {
 	kubeClient := newFakeKubeClient()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	err := c.kubeClient.ServiceAccounts("namespace1").Delete("default")
 	assert.Nil(t, err)
@@ -541,7 +546,8 @@ func TestProcessWithExistingImagePullSecrets(t *testing.T) {
 	kubeClient := newFakeKubeClient()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	serviceAccount, err := c.kubeClient.ServiceAccounts("namespace1").Get("default")
 	assert.Nil(t, err)
@@ -588,7 +594,8 @@ func TestFailingGcrPassingEcrStillSucceeds(t *testing.T) {
 	kubeClient := newFakeKubeClient()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeFailingGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, false}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	err := c.process()
 	assert.Nil(t, err)
@@ -598,7 +605,8 @@ func TestPassingGcrPassingEcrStillSucceeds(t *testing.T) {
 	kubeClient := newFakeKubeClient()
 	ecrClient := newFakeFailingEcrClient()
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{false, true}
+	c := controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	err := c.process()
 	assert.Nil(t, err)
