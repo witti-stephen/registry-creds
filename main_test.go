@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -152,6 +153,12 @@ func (f *fakeEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenIn
 	}, nil
 }
 
+type fakeFailingEcrClient struct{}
+
+func (f *fakeFailingEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error) {
+	return nil, errors.New("fake error")
+}
+
 type fakeGcrClient struct{}
 
 type fakeTokenSource struct{}
@@ -168,6 +175,12 @@ func newFakeTokenSource() fakeTokenSource {
 
 func (f *fakeGcrClient) DefaultTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error) {
 	return newFakeTokenSource(), nil
+}
+
+type fakeFailingGcrClient struct{}
+
+func (f *fakeFailingGcrClient) DefaultTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error) {
+	return nil, errors.New("fake error")
 }
 
 func newFakeKubeClient() *fakeKubeClient {
@@ -238,6 +251,14 @@ func newFakeEcrClient() *fakeEcrClient {
 
 func newFakeGcrClient() *fakeGcrClient {
 	return &fakeGcrClient{}
+}
+
+func newFakeFailingGcrClient() *fakeFailingGcrClient {
+	return &fakeFailingGcrClient{}
+}
+
+func newFakeFailingEcrClient() *fakeFailingEcrClient {
+	return &fakeFailingEcrClient{}
 }
 
 func TestgetECRAuthorizationKey(t *testing.T) {
@@ -561,4 +582,24 @@ func TestAwsRegionFromEnv(t *testing.T) {
 	validateParams()
 
 	assert.Equal(t, expectedRegion, *argAWSRegion)
+}
+
+func TestFailingGcrPassingEcrStillSucceeds(t *testing.T) {
+	kubeClient := newFakeKubeClient()
+	ecrClient := newFakeEcrClient()
+	gcrClient := newFakeFailingGcrClient()
+	c := &controller{kubeClient, ecrClient, gcrClient}
+
+	err := c.process()
+	assert.Nil(t, err)
+}
+
+func TestPassingGcrPassingEcrStillSucceeds(t *testing.T) {
+	kubeClient := newFakeKubeClient()
+	ecrClient := newFakeFailingEcrClient()
+	gcrClient := newFakeGcrClient()
+	c := &controller{kubeClient, ecrClient, gcrClient}
+
+	err := c.process()
+	assert.Nil(t, err)
 }
