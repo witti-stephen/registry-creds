@@ -4,7 +4,7 @@
 
 .PHONY: all binary container push clean test
 
-TAG = 1.4
+TAG = 1.5
 PREFIX = upmcenterprises
 
 all: container
