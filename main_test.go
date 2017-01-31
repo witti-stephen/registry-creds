@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -152,6 +153,12 @@ func (f *fakeEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenIn
 	}, nil
 }
 
+type fakeFailingEcrClient struct{}
+
+func (f *fakeFailingEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenInput) (*ecr.GetAuthorizationTokenOutput, error) {
+	return nil, errors.New("fake error")
+}
+
 type fakeGcrClient struct{}
 
 type fakeTokenSource struct{}
@@ -168,6 +175,12 @@ func newFakeTokenSource() fakeTokenSource {
 
 func (f *fakeGcrClient) DefaultTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error) {
 	return newFakeTokenSource(), nil
+}
+
+type fakeFailingGcrClient struct{}
+
+func (f *fakeFailingGcrClient) DefaultTokenSource(ctx context.Context, scope ...string) (oauth2.TokenSource, error) {
+	return nil, errors.New("fake error")
 }
 
 func newFakeKubeClient() *fakeKubeClient {
@@ -240,11 +253,20 @@ func newFakeGcrClient() *fakeGcrClient {
 	return &fakeGcrClient{}
 }
 
+func newFakeFailingGcrClient() *fakeFailingGcrClient {
+	return &fakeFailingGcrClient{}
+}
+
+func newFakeFailingEcrClient() *fakeFailingEcrClient {
+	return &fakeFailingEcrClient{}
+}
+
 func TestgetECRAuthorizationKey(t *testing.T) {
 	kubeClient := newFakeKubeClient()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	token, err := c.getECRAuthorizationKey()
 
@@ -258,7 +280,8 @@ func TestProcessOnce(t *testing.T) {
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	err := c.process()
 	assert.Nil(t, err)
@@ -328,7 +351,8 @@ func TestProcessTwice(t *testing.T) {
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 	err := c.process()
 	assert.Nil(t, err)
 	// test processing twice for idempotency
@@ -399,7 +423,8 @@ func TestProcessWithExistingSecrets(t *testing.T) {
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	secretGCR := &api.Secret{
 		ObjectMeta: api.ObjectMeta{
@@ -505,7 +530,8 @@ func TestProcessNoDefaultServiceAccount(t *testing.T) {
 	kubeClient := newFakeKubeClient()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	err := c.kubeClient.ServiceAccounts("namespace1").Delete("default")
 	assert.Nil(t, err)
@@ -520,7 +546,8 @@ func TestProcessWithExistingImagePullSecrets(t *testing.T) {
 	kubeClient := newFakeKubeClient()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	testConfig := providerConfig{true, true}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
 
 	serviceAccount, err := c.kubeClient.ServiceAccounts("namespace1").Get("default")
 	assert.Nil(t, err)
@@ -561,4 +588,26 @@ func TestAwsRegionFromEnv(t *testing.T) {
 	validateParams()
 
 	assert.Equal(t, expectedRegion, *argAWSRegion)
+}
+
+func TestFailingGcrPassingEcrStillSucceeds(t *testing.T) {
+	kubeClient := newFakeKubeClient()
+	ecrClient := newFakeEcrClient()
+	gcrClient := newFakeFailingGcrClient()
+	testConfig := providerConfig{true, false}
+	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
+
+	err := c.process()
+	assert.Nil(t, err)
+}
+
+func TestPassingGcrPassingEcrStillSucceeds(t *testing.T) {
+	kubeClient := newFakeKubeClient()
+	ecrClient := newFakeFailingEcrClient()
+	gcrClient := newFakeGcrClient()
+	testConfig := providerConfig{false, true}
+	c := controller{kubeClient, ecrClient, gcrClient, testConfig}
+
+	err := c.process()
+	assert.Nil(t, err)
 }

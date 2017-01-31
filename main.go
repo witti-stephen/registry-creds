@@ -69,6 +69,12 @@ type controller struct {
 	kubeClient kubeInterface
 	ecrClient  ecrInterface
 	gcrClient  gcrInterface
+	config     providerConfig
+}
+
+type providerConfig struct {
+	ecrEnabled bool
+	gcrEnabled bool
 }
 
 type kubeInterface interface {
@@ -201,19 +207,31 @@ type SecretGenerator struct {
 	SecretName  string
 }
 
-func (c *controller) process() error {
-	secretGenerators := []SecretGenerator{
-		SecretGenerator{
+func getSecretGenerators(c *controller) []SecretGenerator {
+	secretGenerators := []SecretGenerator{}
+
+	if c.config.gcrEnabled {
+		secretGenerators = append(secretGenerators, SecretGenerator{
 			TokenGenFxn: c.getGCRAuthorizationKey,
 			IsJSONCfg:   false,
 			SecretName:  *argGCRSecretName,
-		},
-		SecretGenerator{
+		})
+	}
+
+	if c.config.ecrEnabled {
+		secretGenerators = append(secretGenerators, SecretGenerator{
 			TokenGenFxn: c.getECRAuthorizationKey,
 			IsJSONCfg:   true,
 			SecretName:  *argAWSSecretName,
-		},
+		})
 	}
+
+	return secretGenerators
+}
+
+func (c *controller) process() error {
+	secretGenerators := getSecretGenerators(c)
+
 	for _, secretGenerator := range secretGenerators {
 		newToken, err := secretGenerator.TokenGenFxn()
 		if err != nil {
@@ -283,10 +301,18 @@ func (c *controller) process() error {
 	return nil
 }
 
-func validateParams() {
+func validateParams() providerConfig {
+	var gcrEnabled bool
+	var ecrEnabled bool
+
 	awsAccountID = os.Getenv("awsaccount")
 	if len(awsAccountID) == 0 {
 		log.Print("Missing awsaccount env variable, assuming GCR usage")
+		gcrEnabled = true
+		ecrEnabled = false
+	} else {
+		gcrEnabled = false
+		ecrEnabled = true
 	}
 
 	awsRegionEnv := os.Getenv("awsregion")
@@ -294,13 +320,15 @@ func validateParams() {
 	if len(awsRegionEnv) > 0 {
 		argAWSRegion = &awsRegionEnv
 	}
+
+	return providerConfig{ecrEnabled, gcrEnabled}
 }
 
 func main() {
 	log.Print("Starting up...")
 	flags.Parse(os.Args)
 
-	validateParams()
+	config := validateParams()
 
 	log.Print("Using AWS Account: ", awsAccountID)
 	log.Printf("Using AWS Region: %s", *argAWSRegion)
@@ -309,7 +337,7 @@ func main() {
 	kubeClient := newKubeClient()
 	ecrClient := newEcrClient()
 	gcrClient := newGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient}
+	c := &controller{kubeClient, ecrClient, gcrClient, config}
 
 	tick := time.Tick(time.Duration(*argRefreshMinutes) * time.Minute)
 
