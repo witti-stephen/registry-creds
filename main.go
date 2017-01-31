@@ -321,7 +321,7 @@ func validateParams() providerConfig {
 		argAWSRegion = &awsRegionEnv
 	}
 
-	return providerConfig{gcrEnabled, ecrEnabled}
+	return providerConfig{ecrEnabled, gcrEnabled}
 }
 
 func main() {
