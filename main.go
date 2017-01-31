@@ -59,6 +59,7 @@ var (
 	argGCRURL           = flags.String("gcr-url", "https://gcr.io", `Default GCR URL`)
 	argAWSRegion        = flags.String("aws-region", "us-east-1", `Default AWS region`)
 	argRefreshMinutes   = flags.Int("refresh-mins", 60, `Default time to wait before refreshing (60 minutes)`)
+	argSkipKubeSystem   = flags.Bool("skip-kube-system", true, `If true, will not attempt to set ImagePullSecrets on the kube-system namespace`)
 )
 
 var (
@@ -229,7 +230,7 @@ func (c *controller) process() error {
 
 		for _, namespace := range namespaces.Items {
 
-			if namespace.GetName() == "kube-system" {
+			if *argSkipKubeSystem && namespace.GetName() == "kube-system" {
 				continue
 			}
 
