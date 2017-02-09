@@ -307,7 +307,7 @@ func validateParams() providerConfig {
 	var ecrEnabled bool
 
 	awsAccountID = os.Getenv("awsaccount")
-	if len(awsAccountID) == 0 {
+	if len(awsAccountID) == 0 || awsAccountID == "changeme" {
 		log.Print("Missing awsaccount env variable, assuming GCR usage")
 		gcrEnabled = true
 		ecrEnabled = false
@@ -354,5 +354,4 @@ func main() {
 			}
 		}
 	}
-
 }
