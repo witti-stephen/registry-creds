@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2016, UPMC Enterprises
+Copyright (c) 2017, UPMC Enterprises
 All rights reserved.
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -67,7 +67,7 @@ var (
 )
 
 type controller struct {
-	kubeClient kubeInterface
+	kubeClient k8sutil.kubeInterface
 	ecrClient  ecrInterface
 	gcrClient  gcrInterface
 	config     providerConfig
@@ -76,12 +76,6 @@ type controller struct {
 type providerConfig struct {
 	ecrEnabled bool
 	gcrEnabled bool
-}
-
-type kubeInterface interface {
-	Secrets(namespace string) unversioned.SecretsInterface
-	Namespaces() unversioned.NamespaceInterface
-	ServiceAccounts(namespace string) unversioned.ServiceAccountsInterface
 }
 
 type ecrInterface interface {
@@ -104,32 +98,6 @@ func (gcr gcrClient) DefaultTokenSource(ctx context.Context, scope ...string) (o
 
 func newGcrClient() gcrInterface {
 	return gcrClient{}
-}
-
-func newKubeClient() kubeInterface {
-	var kubeClient *unversioned.Client
-	var config *restclient.Config
-	var err error
-
-	clientConfig := kubectl_util.DefaultClientConfig(flags)
-
-	if *cluster {
-		if kubeClient, err = unversioned.NewInCluster(); err != nil {
-			log.Fatalf("Failed to create client: %v", err)
-		}
-	} else {
-		config, err = clientConfig.ClientConfig()
-		if err != nil {
-			log.Fatalf("error connecting to the client: %v", err)
-		}
-		kubeClient, err = unversioned.New(config)
-
-		if err != nil {
-			log.Fatalf("Failed to create client: %v", err)
-		}
-	}
-
-	return kubeClient
 }
 
 func (c *controller) getGCRAuthorizationKey() (AuthToken, error) {

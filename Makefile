@@ -9,10 +9,10 @@ PREFIX = upmcenterprises
 
 all: container
 
-binary: main.go
+build: main.go
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -installsuffix cgo -o registry-creds --ldflags '-w' ./main.go
 
-container: binary
+container: build
 	docker build -t $(PREFIX)/registry-creds:$(TAG) .
 
 push:
