@@ -4,7 +4,7 @@
 
 .PHONY: all binary container push clean test
 
-TAG = 1.5
+TAG = 1.6
 PREFIX = upmcenterprises
 
 all: container
@@ -22,4 +22,4 @@ clean:
 	rm -f registry-creds
 
 test: clean
-	go test $(go list ./... | grep -v /vendor/)
+	go test $(go list ./... | grep -v vendor)

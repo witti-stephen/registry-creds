@@ -30,17 +30,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	flag "github.com/spf13/pflag"
+	"github.com/upmc-enterprises/registry-creds/k8sutil"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/client/restclient"
-	"k8s.io/kubernetes/pkg/client/unversioned"
-	kubectl_util "k8s.io/kubernetes/pkg/kubectl/cmd/util"
+	"k8s.io/client-go/pkg/api/v1"
 )
 
 const (
@@ -49,8 +48,8 @@ const (
 )
 
 var (
-	flags               = flag.NewFlagSet("", flag.ContinueOnError)
-	cluster             = flags.Bool("use-kubernetes-cluster-service", true, `If true, use the built in kubernetes cluster for creating the client`)
+	flags = flag.NewFlagSet("", flag.ContinueOnError)
+	// cluster             = flags.Bool("use-kubernetes-cluster-service", true, `If true, use the built in kubernetes cluster for creating the client`)
 	argKubecfgFile      = flags.String("kubecfg-file", "", `Location of kubecfg file for access to kubernetes master service; --kube_master_url overrides the URL part of this; if neither this nor --kube_master_url are provided, defaults to service account tokens`)
 	argKubeMasterURL    = flags.String("kube-master-url", "", `URL to reach kubernetes master. Env variables in this flag will be expanded.`)
 	argAWSSecretName    = flags.String("aws-secret-name", "awsecr-cred", `Default aws secret name`)
@@ -67,10 +66,10 @@ var (
 )
 
 type controller struct {
-	kubeClient k8sutil.kubeInterface
-	ecrClient  ecrInterface
-	gcrClient  gcrInterface
-	config     providerConfig
+	k8sutil   *k8sutil.K8sutilInterface
+	ecrClient ecrInterface
+	gcrClient gcrInterface
+	config    providerConfig
 }
 
 type providerConfig struct {
@@ -147,9 +146,9 @@ func (c *controller) getECRAuthorizationKey() (AuthToken, error) {
 		Endpoint:    *token.ProxyEndpoint}, err
 }
 
-func generateSecretObj(token string, endpoint string, isJSONCfg bool, secretName string) *api.Secret {
-	secret := &api.Secret{
-		ObjectMeta: api.ObjectMeta{
+func generateSecretObj(token string, endpoint string, isJSONCfg bool, secretName string) *v1.Secret {
+	secret := &v1.Secret{
+		ObjectMeta: v1.ObjectMeta{
 			Name: secretName,
 		},
 	}
@@ -208,8 +207,8 @@ func (c *controller) process() error {
 		}
 		newSecret := generateSecretObj(newToken.AccessToken, newToken.Endpoint, secretGenerator.IsJSONCfg, secretGenerator.SecretName)
 
-		// Get all namespaces
-		namespaces, err := c.kubeClient.Namespaces().List(api.ListOptions{})
+		namespaces, err := c.k8sutil.GetNamespaces()
+
 		if err != nil {
 			return err
 		}
@@ -221,24 +220,24 @@ func (c *controller) process() error {
 			}
 
 			// Check if the secret exists for the namespace
-			_, err := c.kubeClient.Secrets(namespace.GetName()).Get(secretGenerator.SecretName)
+			_, err := c.k8sutil.GetSecret(namespace.GetName(), secretGenerator.SecretName)
 
 			if err != nil {
 				// Secret not found, create
-				_, err := c.kubeClient.Secrets(namespace.GetName()).Create(newSecret)
+				err := c.k8sutil.CreateSecret(namespace.GetName(), newSecret)
 				if err != nil {
 					return err
 				}
 			} else {
 				// Existing secret needs updated
-				_, err := c.kubeClient.Secrets(namespace.GetName()).Update(newSecret)
+				err := c.k8sutil.UpdateSecret(namespace.GetName(), newSecret)
 				if err != nil {
 					return err
 				}
 			}
 
 			// Check if ServiceAccount exists
-			serviceAccount, err := c.kubeClient.ServiceAccounts(namespace.GetName()).Get("default")
+			serviceAccount, err := c.k8sutil.GetServiceAccount(namespace.GetName(), "default")
 
 			if err != nil {
 				return err
@@ -248,7 +247,7 @@ func (c *controller) process() error {
 			imagePullSecretFound := false
 			for i, imagePullSecret := range serviceAccount.ImagePullSecrets {
 				if imagePullSecret.Name == secretGenerator.SecretName {
-					serviceAccount.ImagePullSecrets[i] = api.LocalObjectReference{Name: secretGenerator.SecretName}
+					serviceAccount.ImagePullSecrets[i] = v1.LocalObjectReference{Name: secretGenerator.SecretName}
 					imagePullSecretFound = true
 					break
 				}
@@ -256,10 +255,10 @@ func (c *controller) process() error {
 
 			// Append to list of existing service accounts if there isn't one already
 			if !imagePullSecretFound {
-				serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, api.LocalObjectReference{Name: secretGenerator.SecretName})
+				serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, v1.LocalObjectReference{Name: secretGenerator.SecretName})
 			}
 
-			_, err = c.kubeClient.ServiceAccounts(namespace.GetName()).Update(serviceAccount)
+			err = c.k8sutil.UpdateServiceAccount(namespace.GetName(), serviceAccount)
 			if err != nil {
 				return err
 			}
@@ -303,10 +302,15 @@ func main() {
 	log.Printf("Using AWS Region: %s", *argAWSRegion)
 	log.Print("Refresh Interval (minutes): ", *argRefreshMinutes)
 
-	kubeClient := newKubeClient()
+	util, err := k8sutil.New(*argKubecfgFile, *argKubeMasterURL)
+
+	if err != nil {
+		logrus.Error("Could not create k8s client!!", err)
+	}
+
 	ecrClient := newEcrClient()
 	gcrClient := newGcrClient()
-	c := &controller{kubeClient, ecrClient, gcrClient, config}
+	c := &controller{util, ecrClient, gcrClient, config}
 
 	tick := time.Tick(time.Duration(*argRefreshMinutes) * time.Minute)
 
