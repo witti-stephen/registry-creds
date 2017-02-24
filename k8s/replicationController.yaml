@@ -41,3 +41,11 @@ spec:
               secretKeyRef:
                 name: registry-creds
                 key: aws-region
+        volumeMounts:
+        - name: gcr-creds
+          mountPath: "/root/.config/gcloud"
+          readOnly: true
+      volumes:
+      - name: gcr-creds
+        secret:
+          secretName: gcr-secret
