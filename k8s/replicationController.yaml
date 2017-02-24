@@ -36,3 +36,8 @@ spec:
               secretKeyRef:
                 name: registry-creds
                 key: aws-account
+          - name: awsregion
+            valueFrom:
+              secretKeyRef:
+                name: registry-creds
+                key: aws-region

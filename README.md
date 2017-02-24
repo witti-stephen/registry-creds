@@ -55,8 +55,9 @@ kubectl create -f k8s/secret.yaml
 3. Create the replication controller. NOTE: If running on prem, no need to provide AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY since that will come from the EC2 instance.
 
   ```bash
-  kubectl create -f k8s/replicationController.yml
+  kubectl create -f k8s/replicationController.yaml
   ```
+4. Use awsecr-cred for name of imagePullSecrets on your deployment.yaml file.
 
 ## How to setup running in GCR
 
