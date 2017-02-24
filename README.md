@@ -84,13 +84,13 @@ base64 -w $HOME/.config/gcloud/application_default_credentials.json
 
 3. Create the secret in kubernetes
 ```bash
-kubectl create -f k8s/gcr-secret.yml
+kubectl create -f k8s/gcr-secret.yaml
 ```
 
 3. Create the replication controller:
 
 ```bash
-kubectl create -f k8s/replicationController.yml
+kubectl create -f k8s/replicationController.yaml
 ```
 
 ## DockerHub Image
