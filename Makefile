@@ -4,15 +4,15 @@
 
 .PHONY: all binary container push clean test
 
-TAG = 1.5
+TAG = 1.6
 PREFIX = upmcenterprises
 
 all: container
 
-binary: main.go
+build: main.go
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -a -installsuffix cgo -o registry-creds --ldflags '-w' ./main.go
 
-container: binary
+container: build
 	docker build -t $(PREFIX)/registry-creds:$(TAG) .
 
 push:
@@ -22,4 +22,4 @@ clean:
 	rm -f registry-creds
 
 test: clean
-	go test $(go list ./... | grep -v /vendor/)
+	go test $(go list ./... | grep -v vendor)
