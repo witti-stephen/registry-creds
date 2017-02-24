@@ -4,20 +4,20 @@ metadata:
   name: registry-creds
   namespace: kube-system
   labels:
-    version: v1.5
+    version: v1.6
 spec:
   replicas: 1
   selector:
     name: registry-creds
-    version: v1.5
+    version: v1.6
   template:
     metadata:
       labels:
         name: registry-creds
-        version: v1.5
+        version: v1.6
     spec:
       containers:
-      - image: upmcenterprises/registry-creds:1.5
+      - image: upmcenterprises/registry-creds:1.6
         name: registry-creds
         imagePullPolicy: Always
         env:

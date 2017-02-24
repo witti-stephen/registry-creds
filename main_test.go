@@ -9,11 +9,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ecr"
 	"github.com/stretchr/testify/assert"
+	"github.com/upmc-enterprises/registry-creds/k8sutil"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/client/unversioned"
-	"k8s.io/kubernetes/pkg/watch"
+	coreType "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/pkg/api"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/pkg/watch"
 )
 
 type fakeKubeClient struct {
@@ -23,30 +25,30 @@ type fakeKubeClient struct {
 }
 
 type fakeSecrets struct {
-	store map[string]*api.Secret
+	store map[string]*v1.Secret
 }
 
 type fakeServiceAccounts struct {
-	store map[string]*api.ServiceAccount
+	store map[string]*v1.ServiceAccount
 }
 
 type fakeNamespaces struct {
-	store map[string]api.Namespace
+	store map[string]v1.Namespace
 }
 
-func (f *fakeKubeClient) Secrets(namespace string) unversioned.SecretsInterface {
+func (f *fakeKubeClient) Secrets(namespace string) coreType.SecretInterface {
 	return f.secrets[namespace]
 }
 
-func (f *fakeKubeClient) Namespaces() unversioned.NamespaceInterface {
+func (f *fakeKubeClient) Namespaces() coreType.NamespaceInterface {
 	return f.namespaces
 }
 
-func (f *fakeKubeClient) ServiceAccounts(namespace string) unversioned.ServiceAccountsInterface {
+func (f *fakeKubeClient) ServiceAccounts(namespace string) coreType.ServiceAccountInterface {
 	return f.serviceaccounts[namespace]
 }
 
-func (f *fakeSecrets) Create(secret *api.Secret) (*api.Secret, error) {
+func (f *fakeSecrets) Create(secret *v1.Secret) (*v1.Secret, error) {
 	_, ok := f.store[secret.Name]
 
 	if ok {
@@ -57,7 +59,7 @@ func (f *fakeSecrets) Create(secret *api.Secret) (*api.Secret, error) {
 	return secret, nil
 }
 
-func (f *fakeSecrets) Update(secret *api.Secret) (*api.Secret, error) {
+func (f *fakeSecrets) Update(secret *v1.Secret) (*v1.Secret, error) {
 	_, ok := f.store[secret.Name]
 
 	if !ok {
@@ -68,7 +70,7 @@ func (f *fakeSecrets) Update(secret *api.Secret) (*api.Secret, error) {
 	return secret, nil
 }
 
-func (f *fakeSecrets) Get(name string) (*api.Secret, error) {
+func (f *fakeSecrets) Get(name string) (*v1.Secret, error) {
 	secret, ok := f.store[name]
 
 	if !ok {
@@ -78,11 +80,17 @@ func (f *fakeSecrets) Get(name string) (*api.Secret, error) {
 	return secret, nil
 }
 
-func (f *fakeSecrets) Delete(name string) error                            { return nil }
-func (f *fakeSecrets) List(opts api.ListOptions) (*api.SecretList, error)  { return nil, nil }
-func (f *fakeSecrets) Watch(opts api.ListOptions) (watch.Interface, error) { return nil, nil }
+func (f *fakeSecrets) Delete(name string, options *v1.DeleteOptions) error { return nil }
+func (f *fakeSecrets) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
+	return nil
+}
+func (f *fakeSecrets) List(opts v1.ListOptions) (*v1.SecretList, error)   { return nil, nil }
+func (f *fakeSecrets) Watch(opts v1.ListOptions) (watch.Interface, error) { return nil, nil }
+func (f *fakeSecrets) Patch(name string, pt api.PatchType, data []byte, subresources ...string) (result *v1.Secret, err error) {
+	return nil, nil
+}
 
-func (f *fakeServiceAccounts) Get(name string) (*api.ServiceAccount, error) {
+func (f *fakeServiceAccounts) Get(name string) (*v1.ServiceAccount, error) {
 	serviceAccount, ok := f.store[name]
 
 	if !ok {
@@ -92,7 +100,7 @@ func (f *fakeServiceAccounts) Get(name string) (*api.ServiceAccount, error) {
 	return serviceAccount, nil
 }
 
-func (f *fakeServiceAccounts) Update(serviceAccount *api.ServiceAccount) (*api.ServiceAccount, error) {
+func (f *fakeServiceAccounts) Update(serviceAccount *v1.ServiceAccount) (*v1.ServiceAccount, error) {
 	serviceAccount, ok := f.store[serviceAccount.Name]
 
 	if !ok {
@@ -103,7 +111,15 @@ func (f *fakeServiceAccounts) Update(serviceAccount *api.ServiceAccount) (*api.S
 	return serviceAccount, nil
 }
 
-func (f *fakeServiceAccounts) Delete(name string) error {
+func (f *fakeServiceAccounts) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
+	return nil
+}
+
+func (f *fakeServiceAccounts) Patch(name string, pt api.PatchType, data []byte, subresources ...string) (result *v1.ServiceAccount, err error) {
+	return nil, nil
+}
+
+func (f *fakeServiceAccounts) Delete(name string, options *v1.DeleteOptions) error {
 	_, ok := f.store[name]
 
 	if !ok {
@@ -114,31 +130,38 @@ func (f *fakeServiceAccounts) Delete(name string) error {
 	return nil
 }
 
-func (f *fakeServiceAccounts) Create(serviceAccount *api.ServiceAccount) (*api.ServiceAccount, error) {
+func (f *fakeServiceAccounts) Create(serviceAccount *v1.ServiceAccount) (*v1.ServiceAccount, error) {
 	return nil, nil
 }
-func (f *fakeServiceAccounts) List(opts api.ListOptions) (*api.ServiceAccountList, error) {
+func (f *fakeServiceAccounts) List(opts v1.ListOptions) (*v1.ServiceAccountList, error) {
 	return nil, nil
 }
-func (f *fakeServiceAccounts) Watch(opts api.ListOptions) (watch.Interface, error) { return nil, nil }
+func (f *fakeServiceAccounts) Watch(opts v1.ListOptions) (watch.Interface, error) { return nil, nil }
 
-func (f *fakeNamespaces) List(opts api.ListOptions) (*api.NamespaceList, error) {
-	namespaces := []api.Namespace{}
+func (f *fakeNamespaces) List(opts v1.ListOptions) (*v1.NamespaceList, error) {
+	namespaces := []v1.Namespace{}
 
 	for _, v := range f.store {
 		namespaces = append(namespaces, v)
 	}
 
-	return &api.NamespaceList{Items: namespaces}, nil
+	return &v1.NamespaceList{Items: namespaces}, nil
 }
 
-func (f *fakeNamespaces) Create(item *api.Namespace) (*api.Namespace, error)   { return nil, nil }
-func (f *fakeNamespaces) Get(name string) (result *api.Namespace, err error)   { return nil, nil }
-func (f *fakeNamespaces) Delete(name string) error                             { return nil }
-func (f *fakeNamespaces) Update(item *api.Namespace) (*api.Namespace, error)   { return nil, nil }
-func (f *fakeNamespaces) Watch(opts api.ListOptions) (watch.Interface, error)  { return nil, nil }
-func (f *fakeNamespaces) Finalize(item *api.Namespace) (*api.Namespace, error) { return nil, nil }
-func (f *fakeNamespaces) Status(item *api.Namespace) (*api.Namespace, error)   { return nil, nil }
+func (f *fakeNamespaces) Create(item *v1.Namespace) (*v1.Namespace, error)    { return nil, nil }
+func (f *fakeNamespaces) Get(name string) (result *v1.Namespace, err error)   { return nil, nil }
+func (f *fakeNamespaces) UpdateStatus(*v1.Namespace) (*v1.Namespace, error)   { return nil, nil }
+func (f *fakeNamespaces) Delete(name string, options *v1.DeleteOptions) error { return nil }
+func (f *fakeNamespaces) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
+	return nil
+}
+func (f *fakeNamespaces) Update(item *v1.Namespace) (*v1.Namespace, error)   { return nil, nil }
+func (f *fakeNamespaces) Watch(opts v1.ListOptions) (watch.Interface, error) { return nil, nil }
+func (f *fakeNamespaces) Finalize(item *v1.Namespace) (*v1.Namespace, error) { return nil, nil }
+func (f *fakeNamespaces) Patch(name string, pt api.PatchType, data []byte, subresources ...string) (result *v1.Namespace, err error) {
+	return nil, nil
+}
+func (f *fakeNamespaces) Status(item *v1.Namespace) (*v1.Namespace, error) { return nil, nil }
 
 type fakeEcrClient struct{}
 
@@ -183,59 +206,66 @@ func (f *fakeFailingGcrClient) DefaultTokenSource(ctx context.Context, scope ...
 	return nil, errors.New("fake error")
 }
 
-func newFakeKubeClient() *fakeKubeClient {
+func newKubeUtil() *k8sutil.K8sutilInterface {
+	return &k8sutil.K8sutilInterface{
+		Kclient:    newFakeKubeClient(),
+		MasterHost: "foo",
+	}
+}
+
+func newFakeKubeClient() k8sutil.KubeInterface {
 	return &fakeKubeClient{
 		secrets: map[string]*fakeSecrets{
 			"namespace1": &fakeSecrets{
-				store: map[string]*api.Secret{},
+				store: map[string]*v1.Secret{},
 			},
 			"namespace2": &fakeSecrets{
-				store: map[string]*api.Secret{},
+				store: map[string]*v1.Secret{},
 			},
 			"kube-system": &fakeSecrets{
-				store: map[string]*api.Secret{},
+				store: map[string]*v1.Secret{},
 			},
 		},
-		namespaces: &fakeNamespaces{store: map[string]api.Namespace{
-			"namespace1": api.Namespace{
-				ObjectMeta: api.ObjectMeta{
+		namespaces: &fakeNamespaces{store: map[string]v1.Namespace{
+			"namespace1": v1.Namespace{
+				ObjectMeta: v1.ObjectMeta{
 					Name: "namespace1",
 				},
 			},
-			"namespace2": api.Namespace{
-				ObjectMeta: api.ObjectMeta{
+			"namespace2": v1.Namespace{
+				ObjectMeta: v1.ObjectMeta{
 					Name: "namespace2",
 				},
 			},
-			"kube-system": api.Namespace{
-				ObjectMeta: api.ObjectMeta{
+			"kube-system": v1.Namespace{
+				ObjectMeta: v1.ObjectMeta{
 					Name: "kube-system",
 				},
 			},
 		}},
 		serviceaccounts: map[string]*fakeServiceAccounts{
 			"namespace1": &fakeServiceAccounts{
-				store: map[string]*api.ServiceAccount{
-					"default": &api.ServiceAccount{
-						ObjectMeta: api.ObjectMeta{
+				store: map[string]*v1.ServiceAccount{
+					"default": &v1.ServiceAccount{
+						ObjectMeta: v1.ObjectMeta{
 							Name: "default",
 						},
 					},
 				},
 			},
 			"namespace2": &fakeServiceAccounts{
-				store: map[string]*api.ServiceAccount{
-					"default": &api.ServiceAccount{
-						ObjectMeta: api.ObjectMeta{
+				store: map[string]*v1.ServiceAccount{
+					"default": &v1.ServiceAccount{
+						ObjectMeta: v1.ObjectMeta{
 							Name: "default",
 						},
 					},
 				},
 			},
 			"kube-system": &fakeServiceAccounts{
-				store: map[string]*api.ServiceAccount{
-					"default": &api.ServiceAccount{
-						ObjectMeta: api.ObjectMeta{
+				store: map[string]*v1.ServiceAccount{
+					"default": &v1.ServiceAccount{
+						ObjectMeta: v1.ObjectMeta{
 							Name: "default",
 						},
 					},
@@ -261,12 +291,12 @@ func newFakeFailingEcrClient() *fakeFailingEcrClient {
 	return &fakeFailingEcrClient{}
 }
 
-func TestgetECRAuthorizationKey(t *testing.T) {
-	kubeClient := newFakeKubeClient()
+func TestGetECRAuthorizationKey(t *testing.T) {
+	util := newKubeUtil()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeGcrClient()
 	testConfig := providerConfig{true, true}
-	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
+	c := &controller{util, ecrClient, gcrClient, testConfig}
 
 	token, err := c.getECRAuthorizationKey()
 
@@ -276,83 +306,83 @@ func TestgetECRAuthorizationKey(t *testing.T) {
 }
 
 func TestProcessOnce(t *testing.T) {
-	kubeClient := newFakeKubeClient()
+	util := newKubeUtil()
+
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
 	testConfig := providerConfig{true, true}
-	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
+	c := &controller{util, ecrClient, gcrClient, testConfig}
 
 	err := c.process()
 	assert.Nil(t, err)
 
 	// Test GCR
-	secret, err := c.kubeClient.Secrets("namespace1").Get(*argGCRSecretName)
+	secret, err := c.k8sutil.GetSecret("namespace1", *argGCRSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, secret.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, "fakeEndpoint", "fakeToken")),
 	}, secret.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockercfg"), secret.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockercfg"), secret.Type)
 
-	secret, err = c.kubeClient.Secrets("namespace1").Get(*argGCRSecretName)
+	secret, err = c.k8sutil.GetSecret("namespace1", *argGCRSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, secret.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, "fakeEndpoint", "fakeToken")),
 	}, secret.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockercfg"), secret.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockercfg"), secret.Type)
 
-	_, err = c.kubeClient.Secrets("kube-system").Get(*argGCRSecretName)
+	_, err = c.k8sutil.GetSecret("kube-system", *argGCRSecretName)
 	assert.NotNil(t, err)
 
-	serviceAccount, err := c.kubeClient.ServiceAccounts("namespace1").Get("default")
+	serviceAccount, err := c.k8sutil.GetServiceAccount("namespace1", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, serviceAccount.ImagePullSecrets[0].Name)
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace1").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace1", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, serviceAccount.ImagePullSecrets[0].Name)
 
 	// Test AWS
-	secret, err = c.kubeClient.Secrets("namespace2").Get(*argAWSSecretName)
+	secret, err = c.k8sutil.GetSecret("namespace2", *argAWSSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argAWSSecretName, secret.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, "fakeEndpoint", "fakeToken")),
 	}, secret.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockerconfigjson"), secret.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockerconfigjson"), secret.Type)
 
-	secret, err = c.kubeClient.Secrets("namespace2").Get(*argAWSSecretName)
+	secret, err = c.k8sutil.GetSecret("namespace2", *argAWSSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argAWSSecretName, secret.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, "fakeEndpoint", "fakeToken")),
 	}, secret.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockerconfigjson"), secret.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockerconfigjson"), secret.Type)
 
-	_, err = c.kubeClient.Secrets("kube-system").Get(*argAWSSecretName)
+	_, err = c.k8sutil.GetSecret("kube-system", *argAWSSecretName)
 	assert.NotNil(t, err)
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace2").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace2", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(serviceAccount.ImagePullSecrets))
 	assert.Equal(t, *argAWSSecretName, serviceAccount.ImagePullSecrets[1].Name)
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace2").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace2", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(serviceAccount.ImagePullSecrets))
 	assert.Equal(t, *argAWSSecretName, serviceAccount.ImagePullSecrets[1].Name)
 }
 
 func TestProcessTwice(t *testing.T) {
-
-	kubeClient := newFakeKubeClient()
+	util := newKubeUtil()
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
 	testConfig := providerConfig{true, true}
-	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
+	c := &controller{util, ecrClient, gcrClient, testConfig}
 	err := c.process()
 	assert.Nil(t, err)
 	// test processing twice for idempotency
@@ -360,74 +390,74 @@ func TestProcessTwice(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Test GCR
-	secret, err := c.kubeClient.Secrets("namespace1").Get(*argGCRSecretName)
+	secret, err := c.k8sutil.GetSecret("namespace1", *argGCRSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, secret.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, "fakeEndpoint", "fakeToken")),
 	}, secret.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockercfg"), secret.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockercfg"), secret.Type)
 
-	secret, err = c.kubeClient.Secrets("namespace1").Get(*argGCRSecretName)
+	secret, err = c.k8sutil.GetSecret("namespace1", *argGCRSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, secret.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, "fakeEndpoint", "fakeToken")),
 	}, secret.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockercfg"), secret.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockercfg"), secret.Type)
 
-	_, err = c.kubeClient.Secrets("kube-system").Get(*argGCRSecretName)
+	_, err = c.k8sutil.GetSecret("kube-system", *argGCRSecretName)
 	assert.NotNil(t, err)
 
-	serviceAccount, err := c.kubeClient.ServiceAccounts("namespace1").Get("default")
+	serviceAccount, err := c.k8sutil.GetServiceAccount("namespace1", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, serviceAccount.ImagePullSecrets[0].Name)
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace1").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace1", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, serviceAccount.ImagePullSecrets[0].Name)
 
 	// Test AWS
-	secret, err = c.kubeClient.Secrets("namespace2").Get(*argAWSSecretName)
+	secret, err = c.k8sutil.GetSecret("namespace2", *argAWSSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argAWSSecretName, secret.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, "fakeEndpoint", "fakeToken")),
 	}, secret.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockerconfigjson"), secret.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockerconfigjson"), secret.Type)
 
-	secret, err = c.kubeClient.Secrets("namespace2").Get(*argAWSSecretName)
+	secret, err = c.k8sutil.GetSecret("namespace2", *argAWSSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argAWSSecretName, secret.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, "fakeEndpoint", "fakeToken")),
 	}, secret.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockerconfigjson"), secret.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockerconfigjson"), secret.Type)
 
-	_, err = c.kubeClient.Secrets("kube-system").Get(*argAWSSecretName)
+	_, err = c.k8sutil.GetSecret("kube-system", *argAWSSecretName)
 	assert.NotNil(t, err)
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace2").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace2", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(serviceAccount.ImagePullSecrets))
 	assert.Equal(t, *argAWSSecretName, serviceAccount.ImagePullSecrets[1].Name)
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace2").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace2", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(serviceAccount.ImagePullSecrets))
 	assert.Equal(t, *argAWSSecretName, serviceAccount.ImagePullSecrets[1].Name)
 }
 
 func TestProcessWithExistingSecrets(t *testing.T) {
-	kubeClient := newFakeKubeClient()
+	util := newKubeUtil()
 	ecrClient := newFakeEcrClient()
 	*argGCRURL = "fakeEndpoint"
 	gcrClient := newFakeGcrClient()
 	testConfig := providerConfig{true, true}
-	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
+	c := &controller{util, ecrClient, gcrClient, testConfig}
 
-	secretGCR := &api.Secret{
-		ObjectMeta: api.ObjectMeta{
+	secretGCR := &v1.Secret{
+		ObjectMeta: v1.ObjectMeta{
 			Name: *argGCRSecretName,
 		},
 		Data: map[string][]byte{
@@ -436,13 +466,13 @@ func TestProcessWithExistingSecrets(t *testing.T) {
 		Type: "some other type",
 	}
 
-	_, err := c.kubeClient.Secrets("namespace1").Create(secretGCR)
+	err := c.k8sutil.CreateSecret("namespace1", secretGCR)
 	assert.Nil(t, err)
-	_, err = c.kubeClient.Secrets("namespace2").Create(secretGCR)
+	err = c.k8sutil.CreateSecret("namespace2", secretGCR)
 	assert.Nil(t, err)
 
-	secretAWS := &api.Secret{
-		ObjectMeta: api.ObjectMeta{
+	secretAWS := &v1.Secret{
+		ObjectMeta: v1.ObjectMeta{
 			Name: *argAWSSecretName,
 		},
 		Data: map[string][]byte{
@@ -451,124 +481,124 @@ func TestProcessWithExistingSecrets(t *testing.T) {
 		Type: "some other type",
 	}
 
-	_, err = c.kubeClient.Secrets("namespace1").Create(secretAWS)
+	err = c.k8sutil.CreateSecret("namespace1", secretAWS)
 	assert.Nil(t, err)
-	_, err = c.kubeClient.Secrets("namespace2").Create(secretAWS)
+	err = c.k8sutil.CreateSecret("namespace2", secretAWS)
 	assert.Nil(t, err)
 
 	err = c.process()
 	assert.Nil(t, err)
 
 	// Test GCR
-	secretGCR, err = c.kubeClient.Secrets("namespace1").Get(*argGCRSecretName)
+	secretGCR, err = c.k8sutil.GetSecret("namespace1", *argGCRSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, secretGCR.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, "fakeEndpoint", "fakeToken")),
 	}, secretGCR.Data)
-	assert.Equal(t, secretGCR.Type, api.SecretType("kubernetes.io/dockercfg"))
+	assert.Equal(t, secretGCR.Type, v1.SecretType("kubernetes.io/dockercfg"))
 
-	secretGCR, err = c.kubeClient.Secrets("namespace2").Get(*argGCRSecretName)
+	secretGCR, err = c.k8sutil.GetSecret("namespace2", *argGCRSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, secretGCR.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, "fakeEndpoint", "fakeToken")),
 	}, secretGCR.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockercfg"), secretGCR.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockercfg"), secretGCR.Type)
 
-	secretGCR, err = c.kubeClient.Secrets("namespace1").Get(*argGCRSecretName)
+	secretGCR, err = c.k8sutil.GetSecret("namespace1", *argGCRSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, secretGCR.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, "fakeEndpoint", "fakeToken")),
 	}, secretGCR.Data)
-	assert.Equal(t, secretGCR.Type, api.SecretType("kubernetes.io/dockercfg"))
+	assert.Equal(t, secretGCR.Type, v1.SecretType("kubernetes.io/dockercfg"))
 
-	secretGCR, err = c.kubeClient.Secrets("namespace2").Get(*argGCRSecretName)
+	secretGCR, err = c.k8sutil.GetSecret("namespace2", *argGCRSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argGCRSecretName, secretGCR.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, "fakeEndpoint", "fakeToken")),
 	}, secretGCR.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockercfg"), secretGCR.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockercfg"), secretGCR.Type)
 
 	// Test AWS
-	secretAWS, err = c.kubeClient.Secrets("namespace1").Get(*argAWSSecretName)
+	secretAWS, err = c.k8sutil.GetSecret("namespace1", *argAWSSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argAWSSecretName, secretAWS.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, "fakeEndpoint", "fakeToken")),
 	}, secretAWS.Data)
-	assert.Equal(t, secretAWS.Type, api.SecretType("kubernetes.io/dockerconfigjson"))
+	assert.Equal(t, secretAWS.Type, v1.SecretType("kubernetes.io/dockerconfigjson"))
 
-	secretAWS, err = c.kubeClient.Secrets("namespace2").Get(*argAWSSecretName)
+	secretAWS, err = c.k8sutil.GetSecret("namespace2", *argAWSSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argAWSSecretName, secretAWS.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, "fakeEndpoint", "fakeToken")),
 	}, secretAWS.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockerconfigjson"), secretAWS.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockerconfigjson"), secretAWS.Type)
 
-	secretAWS, err = c.kubeClient.Secrets("namespace1").Get(*argAWSSecretName)
+	secretAWS, err = c.k8sutil.GetSecret("namespace1", *argAWSSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argAWSSecretName, secretAWS.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, "fakeEndpoint", "fakeToken")),
 	}, secretAWS.Data)
-	assert.Equal(t, secretAWS.Type, api.SecretType("kubernetes.io/dockerconfigjson"))
+	assert.Equal(t, secretAWS.Type, v1.SecretType("kubernetes.io/dockerconfigjson"))
 
-	secretAWS, err = c.kubeClient.Secrets("namespace2").Get(*argAWSSecretName)
+	secretAWS, err = c.k8sutil.GetSecret("namespace2", *argAWSSecretName)
 	assert.Nil(t, err)
 	assert.Equal(t, *argAWSSecretName, secretAWS.Name)
 	assert.Equal(t, map[string][]byte{
 		".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, "fakeEndpoint", "fakeToken")),
 	}, secretAWS.Data)
-	assert.Equal(t, api.SecretType("kubernetes.io/dockerconfigjson"), secretAWS.Type)
+	assert.Equal(t, v1.SecretType("kubernetes.io/dockerconfigjson"), secretAWS.Type)
 }
 
-func TestProcessNoDefaultServiceAccount(t *testing.T) {
-	kubeClient := newFakeKubeClient()
-	ecrClient := newFakeEcrClient()
-	gcrClient := newFakeGcrClient()
-	testConfig := providerConfig{true, true}
-	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
+// func TestProcessNoDefaultServiceAccount(t *testing.T) {
+// 	util := newKubeUtil()
+// 	ecrClient := newFakeEcrClient()
+// 	gcrClient := newFakeGcrClient()
+// 	testConfig := providerConfig{true, true}
+// 	c := &controller{util, ecrClient, gcrClient, testConfig}
 
-	err := c.kubeClient.ServiceAccounts("namespace1").Delete("default")
-	assert.Nil(t, err)
-	err = c.kubeClient.ServiceAccounts("namespace2").Delete("default")
-	assert.Nil(t, err)
+// 	err := c.k8sutil.DeleteServiceAccounts("namespace1").Delete("default")
+// 	assert.Nil(t, err)
+// 	err = c.k8sutil.ServiceAccounts("namespace2").Delete("default")
+// 	assert.Nil(t, err)
 
-	err = c.process()
-	assert.NotNil(t, err)
-}
+// 	err = c.process()
+// 	assert.NotNil(t, err)
+// }
 
 func TestProcessWithExistingImagePullSecrets(t *testing.T) {
-	kubeClient := newFakeKubeClient()
+	util := newKubeUtil()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeGcrClient()
 	testConfig := providerConfig{true, true}
-	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
+	c := &controller{util, ecrClient, gcrClient, testConfig}
 
-	serviceAccount, err := c.kubeClient.ServiceAccounts("namespace1").Get("default")
+	serviceAccount, err := c.k8sutil.GetServiceAccount("namespace1", "default")
 	assert.Nil(t, err)
-	serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, api.LocalObjectReference{Name: "someOtherSecret"})
-	_, err = c.kubeClient.ServiceAccounts("namespace1").Update(serviceAccount)
+	serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, v1.LocalObjectReference{Name: "someOtherSecret"})
+	err = c.k8sutil.UpdateServiceAccount("namespace1", serviceAccount)
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace2").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace2", "default")
 	assert.Nil(t, err)
-	serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, api.LocalObjectReference{Name: "someOtherSecret"})
-	_, err = c.kubeClient.ServiceAccounts("namespace2").Update(serviceAccount)
+	serviceAccount.ImagePullSecrets = append(serviceAccount.ImagePullSecrets, v1.LocalObjectReference{Name: "someOtherSecret"})
+	err = c.k8sutil.UpdateServiceAccount("namespace2", serviceAccount)
 
 	c.process()
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace1").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace1", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, 3, len(serviceAccount.ImagePullSecrets))
 	assert.Equal(t, "someOtherSecret", serviceAccount.ImagePullSecrets[0].Name)
 	assert.Equal(t, *argGCRSecretName, serviceAccount.ImagePullSecrets[1].Name)
 	assert.Equal(t, *argAWSSecretName, serviceAccount.ImagePullSecrets[2].Name)
 
-	serviceAccount, err = c.kubeClient.ServiceAccounts("namespace2").Get("default")
+	serviceAccount, err = c.k8sutil.GetServiceAccount("namespace2", "default")
 	assert.Nil(t, err)
 	assert.Equal(t, 3, len(serviceAccount.ImagePullSecrets))
 	assert.Equal(t, "someOtherSecret", serviceAccount.ImagePullSecrets[0].Name)
@@ -591,22 +621,22 @@ func TestAwsRegionFromEnv(t *testing.T) {
 }
 
 func TestFailingGcrPassingEcrStillSucceeds(t *testing.T) {
-	kubeClient := newFakeKubeClient()
+	util := newKubeUtil()
 	ecrClient := newFakeEcrClient()
 	gcrClient := newFakeFailingGcrClient()
 	testConfig := providerConfig{true, false}
-	c := &controller{kubeClient, ecrClient, gcrClient, testConfig}
+	c := &controller{util, ecrClient, gcrClient, testConfig}
 
 	err := c.process()
 	assert.Nil(t, err)
 }
 
 func TestPassingGcrPassingEcrStillSucceeds(t *testing.T) {
-	kubeClient := newFakeKubeClient()
+	util := newKubeUtil()
 	ecrClient := newFakeFailingEcrClient()
 	gcrClient := newFakeGcrClient()
 	testConfig := providerConfig{false, true}
-	c := controller{kubeClient, ecrClient, gcrClient, testConfig}
+	c := controller{util, ecrClient, gcrClient, testConfig}
 
 	err := c.process()
 	assert.Nil(t, err)
