@@ -24,22 +24,22 @@ spec:
           - name: AWS_ACCESS_KEY_ID
             valueFrom:
               secretKeyRef:
-                name: registry-creds
+                name: registry-creds-ecr
                 key: AWS_ACCESS_KEY_ID
           - name: AWS_SECRET_ACCESS_KEY
             valueFrom:
               secretKeyRef:
-                name: registry-creds
+                name: registry-creds-ecr
                 key: AWS_SECRET_ACCESS_KEY
           - name: awsaccount
             valueFrom:
               secretKeyRef:
-                name: registry-creds
+                name: registry-creds-ecr
                 key: aws-account
           - name: awsregion
             valueFrom:
               secretKeyRef:
-                name: registry-creds
+                name: registry-creds-ecr
                 key: aws-region
         volumeMounts:
         - name: gcr-creds
@@ -48,4 +48,4 @@ spec:
       volumes:
       - name: gcr-creds
         secret:
-          secretName: gcr-secret
+          secretName: registry-creds-gcr

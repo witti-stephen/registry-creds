@@ -48,8 +48,7 @@ const (
 )
 
 var (
-	flags = flag.NewFlagSet("", flag.ContinueOnError)
-	// cluster             = flags.Bool("use-kubernetes-cluster-service", true, `If true, use the built in kubernetes cluster for creating the client`)
+	flags               = flag.NewFlagSet("", flag.ContinueOnError)
 	argKubecfgFile      = flags.String("kubecfg-file", "", `Location of kubecfg file for access to kubernetes master service; --kube_master_url overrides the URL part of this; if neither this nor --kube_master_url are provided, defaults to service account tokens`)
 	argKubeMasterURL    = flags.String("kube-master-url", "", `URL to reach kubernetes master. Env variables in this flag will be expanded.`)
 	argAWSSecretName    = flags.String("aws-secret-name", "awsecr-cred", `Default aws secret name`)
@@ -69,12 +68,6 @@ type controller struct {
 	k8sutil   *k8sutil.K8sutilInterface
 	ecrClient ecrInterface
 	gcrClient gcrInterface
-	config    providerConfig
-}
-
-type providerConfig struct {
-	ecrEnabled bool
-	gcrEnabled bool
 }
 
 type ecrInterface interface {
@@ -178,21 +171,17 @@ type SecretGenerator struct {
 func getSecretGenerators(c *controller) []SecretGenerator {
 	secretGenerators := []SecretGenerator{}
 
-	if c.config.gcrEnabled {
-		secretGenerators = append(secretGenerators, SecretGenerator{
-			TokenGenFxn: c.getGCRAuthorizationKey,
-			IsJSONCfg:   false,
-			SecretName:  *argGCRSecretName,
-		})
-	}
+	secretGenerators = append(secretGenerators, SecretGenerator{
+		TokenGenFxn: c.getGCRAuthorizationKey,
+		IsJSONCfg:   false,
+		SecretName:  *argGCRSecretName,
+	})
 
-	if c.config.ecrEnabled {
-		secretGenerators = append(secretGenerators, SecretGenerator{
-			TokenGenFxn: c.getECRAuthorizationKey,
-			IsJSONCfg:   true,
-			SecretName:  *argAWSSecretName,
-		})
-	}
+	secretGenerators = append(secretGenerators, SecretGenerator{
+		TokenGenFxn: c.getECRAuthorizationKey,
+		IsJSONCfg:   true,
+		SecretName:  *argAWSSecretName,
+	})
 
 	return secretGenerators
 }
@@ -203,14 +192,16 @@ func (c *controller) process() error {
 	for _, secretGenerator := range secretGenerators {
 		newToken, err := secretGenerator.TokenGenFxn()
 		if err != nil {
-			return err
+			fmt.Printf("Error getting secret for provider %s. Skipping secret provider! [Err: %s]", secretGenerator.SecretName, err)
+			continue
 		}
 		newSecret := generateSecretObj(newToken.AccessToken, newToken.Endpoint, secretGenerator.IsJSONCfg, secretGenerator.SecretName)
 
 		namespaces, err := c.k8sutil.GetNamespaces()
 
 		if err != nil {
-			return err
+			fmt.Println("-------> ERROR getting namespaces! Skipping secret provider!", err)
+			continue
 		}
 
 		for _, namespace := range namespaces.Items {
@@ -269,34 +260,25 @@ func (c *controller) process() error {
 	return nil
 }
 
-func validateParams() providerConfig {
-	var gcrEnabled bool
-	var ecrEnabled bool
-
-	awsAccountID = os.Getenv("awsaccount")
-	if len(awsAccountID) == 0 || awsAccountID == "changeme" {
-		log.Print("Missing awsaccount env variable, assuming GCR usage")
-		gcrEnabled = true
-		ecrEnabled = false
-	} else {
-		gcrEnabled = false
-		ecrEnabled = true
-	}
-
+func validateParams() {
+	// Allow environment variables to overwrite args
+	awsAccountIDEnv := os.Getenv("awsaccount")
 	awsRegionEnv := os.Getenv("awsregion")
 
 	if len(awsRegionEnv) > 0 {
 		argAWSRegion = &awsRegionEnv
 	}
 
-	return providerConfig{ecrEnabled, gcrEnabled}
+	if len(awsAccountIDEnv) > 0 {
+		awsAccountID = awsAccountIDEnv
+	}
 }
 
 func main() {
 	log.Print("Starting up...")
 	flags.Parse(os.Args)
 
-	config := validateParams()
+	validateParams()
 
 	log.Print("Using AWS Account: ", awsAccountID)
 	log.Printf("Using AWS Region: %s", *argAWSRegion)
@@ -310,7 +292,7 @@ func main() {
 
 	ecrClient := newEcrClient()
 	gcrClient := newGcrClient()
-	c := &controller{util, ecrClient, gcrClient, config}
+	c := &controller{util, ecrClient, gcrClient}
 
 	tick := time.Tick(time.Duration(*argRefreshMinutes) * time.Minute)
 
