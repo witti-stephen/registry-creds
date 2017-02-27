@@ -190,6 +190,9 @@ func (c *controller) process() error {
 	secretGenerators := getSecretGenerators(c)
 
 	for _, secretGenerator := range secretGenerators {
+
+		fmt.Printf("------------------ [%s] ----------------------\n", secretGenerator.SecretName)
+
 		newToken, err := secretGenerator.TokenGenFxn()
 		if err != nil {
 			fmt.Printf("Error getting secret for provider %s. Skipping secret provider! [Err: %s]", secretGenerator.SecretName, err)
@@ -217,13 +220,15 @@ func (c *controller) process() error {
 				// Secret not found, create
 				err := c.k8sutil.CreateSecret(namespace.GetName(), newSecret)
 				if err != nil {
-					return err
+					fmt.Println("Could not create Secret!", err)
+					continue
 				}
 			} else {
 				// Existing secret needs updated
 				err := c.k8sutil.UpdateSecret(namespace.GetName(), newSecret)
 				if err != nil {
-					return err
+					fmt.Println("Could not update Secret!", err)
+					continue
 				}
 			}
 
@@ -231,7 +236,8 @@ func (c *controller) process() error {
 			serviceAccount, err := c.k8sutil.GetServiceAccount(namespace.GetName(), "default")
 
 			if err != nil {
-				return err
+				fmt.Println("Could not get ServiceAccounts!", err)
+				continue
 			}
 
 			// Update existing one if image pull secrets already exists for aws ecr token
@@ -251,10 +257,11 @@ func (c *controller) process() error {
 
 			err = c.k8sutil.UpdateServiceAccount(namespace.GetName(), serviceAccount)
 			if err != nil {
-				return err
+				fmt.Println("Could not update ServiceAccount!", err)
+				continue
 			}
 		}
-		log.Print("Finished processing secret for: ", secretGenerator.SecretName)
+		fmt.Println("Finished processing secret for: ", secretGenerator.SecretName)
 	}
 
 	return nil
