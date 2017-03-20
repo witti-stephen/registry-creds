@@ -690,6 +690,15 @@ func TestAwsRegionFromEnv(t *testing.T) {
 	assert.Equal(t, expectedRegion, *argAWSRegion)
 }
 
+func TestGcrURLFromEnv(t *testing.T) {
+	expectedURL := "http://test.me"
+
+	os.Setenv("gcrurl", "http://test.me")
+	validateParams()
+
+	assert.Equal(t, expectedURL, *argGCRURL)
+}
+
 func TestFailingGcrPassingEcrStillSucceeds(t *testing.T) {
 	util := newKubeUtil()
 	ecrClient := newFakeEcrClient()
