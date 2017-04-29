@@ -28,8 +28,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"strings"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Sirupsen/logrus"
@@ -100,15 +100,15 @@ type dprClient struct{}
 
 func (dpr dprClient) getAuthToken(server, user, password string) (AuthToken, error) {
 	if server == "" {
-		return 	AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryServerKey))
+		return AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryServerKey))
 	}
 
 	if user == "" {
-		return 	AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryUserKey))
+		return AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryUserKey))
 	}
 
 	if password == "" {
-		return 	AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryPasswordKey))
+		return AuthToken{}, fmt.Errorf(fmt.Sprintf("Failed to get auth token for docker private registry: empty value for %s", dockerPrivateRegistryPasswordKey))
 	}
 
 	token := base64.StdEncoding.EncodeToString([]byte(strings.Join([]string{user, password}, ":")))
@@ -306,6 +306,7 @@ func validateParams() {
 	dprPassword := os.Getenv(dockerPrivateRegistryPasswordKey)
 	dprServer := os.Getenv(dockerPrivateRegistryServerKey)
 	dprUser := os.Getenv(dockerPrivateRegistryUserKey)
+	gcrURLEnv := os.Getenv("gcrurl")
 
 	if len(awsRegionEnv) > 0 {
 		argAWSRegion = &awsRegionEnv
@@ -325,6 +326,10 @@ func validateParams() {
 
 	if len(dprUser) > 0 {
 		argDPRUser = &dprUser
+	}
+
+	if len(gcrURLEnv) > 0 {
+		argGCRURL = &gcrURLEnv
 	}
 }
 
