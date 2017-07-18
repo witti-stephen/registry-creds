@@ -42,6 +42,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"k8s.io/client-go/pkg/api/v1"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 )
 
 const (
@@ -66,6 +67,7 @@ var (
 	argDPRUser        = flags.String("dpr-user", "", "Docker Private Registry user")
 	argRefreshMinutes = flags.Int("refresh-mins", 60, `Default time to wait before refreshing (60 minutes)`)
 	argSkipKubeSystem = flags.Bool("skip-kube-system", true, `If true, will not attempt to set ImagePullSecrets on the kube-system namespace`)
+	argAWSAssumeRole  = flags.String( "aws_assume_role", "",  `If specified AWS will assume this role and use it to retrieve tokens`)
 )
 
 var (
@@ -93,7 +95,15 @@ type gcrInterface interface {
 }
 
 func newEcrClient() ecrInterface {
-	return ecr.New(session.New(), aws.NewConfig().WithRegion(*argAWSRegion))
+	sess := session.Must(session.NewSession())
+	awsConfig := aws.NewConfig().WithRegion(*argAWSRegion)
+
+	if *argAWSAssumeRole != "" {
+		creds := stscreds.NewCredentials(sess, *argAWSAssumeRole)
+		awsConfig.Credentials = creds
+	}
+
+	return ecr.New(sess, awsConfig)
 }
 
 type dprClient struct{}
@@ -303,6 +313,7 @@ func validateParams() {
 	// Allow environment variables to overwrite args
 	awsAccountIDEnv := os.Getenv("awsaccount")
 	awsRegionEnv := os.Getenv("awsregion")
+	argAWSAssumeRoleEnv := os.Getenv( "aws_assume_role")
 	dprPassword := os.Getenv(dockerPrivateRegistryPasswordKey)
 	dprServer := os.Getenv(dockerPrivateRegistryServerKey)
 	dprUser := os.Getenv(dockerPrivateRegistryUserKey)
@@ -331,6 +342,10 @@ func validateParams() {
 	if len(gcrURLEnv) > 0 {
 		argGCRURL = &gcrURLEnv
 	}
+
+	if len(argAWSAssumeRoleEnv) > 0 {
+		argAWSAssumeRole = &argAWSAssumeRoleEnv
+	}
 }
 
 func handler(c *controller, ns *v1.Namespace) error {
@@ -358,6 +373,7 @@ func main() {
 
 	log.Print("Using AWS Account: ", awsAccountID)
 	log.Print("Using AWS Region: ", *argAWSRegion)
+	log.Print("Using AWS Assume Role: ", *argAWSAssumeRole)
 	log.Print("Refresh Interval (minutes): ", *argRefreshMinutes)
 
 	util, err := k8sutil.New(*argKubecfgFile, *argKubeMasterURL)
