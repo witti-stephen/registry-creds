@@ -26,6 +26,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -47,7 +48,6 @@ import (
 
 const (
 	dockerCfgTemplate                = `{"%s":{"username":"oauth2accesstoken","password":"%s","email":"none"}}`
-	dockerJSONTemplate               = `{"auths":{"%s":{"auth":"%s","email":"none"}}}`
 	dockerPrivateRegistryPasswordKey = "DOCKER_PRIVATE_REGISTRY_PASSWORD"
 	dockerPrivateRegistryServerKey   = "DOCKER_PRIVATE_REGISTRY_SERVER"
 	dockerPrivateRegistryUserKey     = "DOCKER_PRIVATE_REGISTRY_USER"
@@ -71,8 +71,17 @@ var (
 )
 
 var (
-	awsAccountID string
+	awsAccountIDs []string
 )
+
+type dockerJSON struct {
+	Auths map[string]registryAuth `json:"auths,omitempty"`
+}
+
+type registryAuth struct {
+	Auth  string `json:"auth"`
+	Email string `json:"email"`
+}
 
 type controller struct {
 	k8sutil   *k8sutil.K8sutilInterface
@@ -140,39 +149,49 @@ func newGcrClient() gcrInterface {
 	return gcrClient{}
 }
 
-func (c *controller) getDPRToken() (AuthToken, error) {
-	return c.dprClient.getAuthToken(*argDPRServer, *argDPRUser, *argDPRPassword)
+func (c *controller) getDPRToken() ([]AuthToken, error) {
+	token, err := c.dprClient.getAuthToken(*argDPRServer, *argDPRUser, *argDPRPassword)
+	return []AuthToken{token}, err
 }
 
-func (c *controller) getGCRAuthorizationKey() (AuthToken, error) {
+func (c *controller) getGCRAuthorizationKey() ([]AuthToken, error) {
 	ts, err := c.gcrClient.DefaultTokenSource(context.TODO(), "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
-		return AuthToken{}, err
+		return []AuthToken{}, err
 	}
 
 	token, err := ts.Token()
 	if err != nil {
-		return AuthToken{}, err
+		return []AuthToken{}, err
 	}
 
 	if !token.Valid() {
-		return AuthToken{}, fmt.Errorf("token was invalid")
+		return []AuthToken{}, fmt.Errorf("token was invalid")
 	}
 
 	if token.Type() != "Bearer" {
-		return AuthToken{}, fmt.Errorf(fmt.Sprintf("expected token type \"Bearer\" but got \"%s\"", token.Type()))
+		return []AuthToken{}, fmt.Errorf(fmt.Sprintf("expected token type \"Bearer\" but got \"%s\"", token.Type()))
 	}
 
-	return AuthToken{
-		AccessToken: token.AccessToken,
-		Endpoint:    *argGCRURL}, nil
+	return []AuthToken{
+		AuthToken{
+			AccessToken: token.AccessToken,
+			Endpoint:    *argGCRURL},
+	}, nil
 }
 
-func (c *controller) getECRAuthorizationKey() (AuthToken, error) {
+func (c *controller) getECRAuthorizationKey() ([]AuthToken, error) {
+
+	var tokens []AuthToken
+	var regIds []*string
+	regIds = make([]*string, len(awsAccountIDs))
+
+	for i, awsAccountID := range awsAccountIDs {
+		regIds[i] = aws.String(awsAccountID)
+	}
+
 	params := &ecr.GetAuthorizationTokenInput{
-		RegistryIds: []*string{
-			aws.String(awsAccountID),
-		},
+		RegistryIds: regIds,
 	}
 
 	resp, err := c.ecrClient.GetAuthorizationToken(params)
@@ -181,32 +200,47 @@ func (c *controller) getECRAuthorizationKey() (AuthToken, error) {
 		// Print the error, cast err to awserr.Error to get the Code and
 		// Message from an error.
 		logrus.Println(err.Error())
-		return AuthToken{}, err
+		return []AuthToken{}, err
 	}
 
-	token := resp.AuthorizationData[0]
+	for _, auth := range resp.AuthorizationData {
+		tokens = append(tokens, AuthToken{
+			AccessToken: *auth.AuthorizationToken,
+			Endpoint:    *auth.ProxyEndpoint,
+		})
 
-	return AuthToken{
-		AccessToken: *token.AuthorizationToken,
-		Endpoint:    *token.ProxyEndpoint}, err
+	}
+	return tokens, nil
 }
 
-func generateSecretObj(token string, endpoint string, isJSONCfg bool, secretName string) *v1.Secret {
+func generateSecretObj(tokens []AuthToken, isJSONCfg bool, secretName string) (*v1.Secret, error) {
 	secret := &v1.Secret{
 		ObjectMeta: v1.ObjectMeta{
 			Name: secretName,
 		},
 	}
 	if isJSONCfg {
-		secret.Data = map[string][]byte{
-			".dockerconfigjson": []byte(fmt.Sprintf(dockerJSONTemplate, endpoint, token))}
+		auths := map[string]registryAuth{}
+		for _, token := range tokens {
+			auths[token.Endpoint] = registryAuth{
+				Auth:  token.AccessToken,
+				Email: "none",
+			}
+		}
+		configJSON, err := json.Marshal(dockerJSON{Auths: auths})
+		if err != nil {
+			return secret, nil
+		}
+		secret.Data = map[string][]byte{".dockerconfigjson": configJSON}
 		secret.Type = "kubernetes.io/dockerconfigjson"
 	} else {
-		secret.Data = map[string][]byte{
-			".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, endpoint, token))}
-		secret.Type = "kubernetes.io/dockercfg"
+		if len(tokens) == 1 {
+			secret.Data = map[string][]byte{
+				".dockercfg": []byte(fmt.Sprintf(dockerCfgTemplate, tokens[0].Endpoint, tokens[0].AccessToken))}
+			secret.Type = "kubernetes.io/dockercfg"
+		}
 	}
-	return secret
+	return secret, nil
 }
 
 type AuthToken struct {
@@ -215,7 +249,7 @@ type AuthToken struct {
 }
 
 type SecretGenerator struct {
-	TokenGenFxn func() (AuthToken, error)
+	TokenGenFxn func() ([]AuthToken, error)
 	IsJSONCfg   bool
 	SecretName  string
 }
@@ -298,13 +332,17 @@ func (c *controller) generateSecrets() []*v1.Secret {
 	for _, secretGenerator := range secretGenerators {
 		logrus.Printf("------------------ [%s] ----------------------\n", secretGenerator.SecretName)
 
-		newToken, err := secretGenerator.TokenGenFxn()
+		newTokens, err := secretGenerator.TokenGenFxn()
 		if err != nil {
 			logrus.Printf("Error getting secret for provider %s. Skipping secret provider! [Err: %s]", secretGenerator.SecretName, err)
 			continue
 		}
-		newSecret := generateSecretObj(newToken.AccessToken, newToken.Endpoint, secretGenerator.IsJSONCfg, secretGenerator.SecretName)
-		secrets = append(secrets, newSecret)
+		newSecret, err := generateSecretObj(newTokens, secretGenerator.IsJSONCfg, secretGenerator.SecretName)
+		if err != nil {
+			logrus.Printf("Error generating secret for provider %s. Skipping secret provider! [Err: %s]", secretGenerator.SecretName, err)
+		} else {
+			secrets = append(secrets, newSecret)
+		}
 	}
 	return secrets
 }
@@ -324,7 +362,9 @@ func validateParams() {
 	}
 
 	if len(awsAccountIDEnv) > 0 {
-		awsAccountID = awsAccountIDEnv
+		awsAccountIDs = strings.Split(awsAccountIDEnv, ",")
+	} else {
+		awsAccountIDs = []string{""}
 	}
 
 	if len(dprPassword) > 0 {
@@ -371,7 +411,7 @@ func main() {
 
 	validateParams()
 
-	log.Print("Using AWS Account: ", awsAccountID)
+	log.Print("Using AWS Account: ", strings.Join(awsAccountIDs, ","))
 	log.Print("Using AWS Region: ", *argAWSRegion)
 	log.Print("Using AWS Assume Role: ", *argAWSAssumeRole)
 	log.Print("Refresh Interval (minutes): ", *argRefreshMinutes)
