@@ -23,7 +23,7 @@ The following parameters are driven via Environment variables.
   - awsaccount: AWS Account Id.
   - awsregion: (optional) Can override the default AWS region by setting this variable.
   - aws-assume-role (optional) can provide a role ARN that will be assumed for getting ECR authorization tokens
-    > **Note:** The region can also be specified as an arg to the binary.  
+    > **Note:** The region can also be specified as an arg to the binary.
 
 ## How to setup running in AWS
 
@@ -32,7 +32,7 @@ The following parameters are driven via Environment variables.
 2. Configure
 
    1. If running on AWS EC2, make sure your EC2 instances have the following IAM permissions:
-   
+
       ```json
       {
        "Effect": "Allow",
@@ -62,9 +62,9 @@ The following parameters are driven via Environment variables.
    ```bash
    kubectl create -f k8s/replicationController.yaml
    ```
-   
+
    > **NOTE:** If running on premise, no need to provide `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` since that will come from the EC2 instance.
-   
+
 4. Use `awsecr-cred` for name of `imagePullSecrets` on your `deployment.yaml` file.
 
 ## How to setup running in GCR
@@ -89,7 +89,7 @@ The value for `application_default_credentials.json` can be obtained with the fo
    ```bash
    kubectl create -f k8s/replicationController.yaml
    ```
-   
+
 ## How to setup running in Docker Private Registry
 
 1. Clone the repo and navigate to directory
