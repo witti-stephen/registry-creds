@@ -227,7 +227,7 @@ func (f *fakeDprClient) getAuthToken(server, user, password string) (AuthToken, 
 
 type fakeFailingDprClient struct{}
 
-func (f *fakeFailingDprClient) getAuthToken(server, user, password string) (AuthToken, error){
+func (f *fakeFailingDprClient) getAuthToken(server, user, password string) (AuthToken, error) {
 	return AuthToken{}, errors.New("fake error")
 }
 
