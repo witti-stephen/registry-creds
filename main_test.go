@@ -26,6 +26,11 @@ import (
 func init() {
 	log.SetOutput(ioutil.Discard)
 	logrus.SetOutput(ioutil.Discard)
+	// don't use any retries during testing until we explicitly want to
+	RetryCfg = RetryConfig{
+		NumberOfRetries:     0,
+		RetryDelayInSeconds: 1,
+	}
 }
 
 type fakeKubeClient struct {
@@ -722,6 +727,29 @@ func TestPassingGcrPassingEcrStillSucceeds(t *testing.T) {
 	util := newKubeUtil()
 	ecrClient := newFakeFailingEcrClient()
 	gcrClient := newFakeGcrClient()
+	dprClient := newFakeFailingDprClient()
+	awsAccountIDs = []string{""}
+	c := controller{util, ecrClient, gcrClient, dprClient}
+
+	process(t, &c)
+}
+
+func TestControllerGenerateSecretsRetryOnError(t *testing.T) {
+	// enable log output for this test
+	log.SetOutput(os.Stdout)
+	logrus.SetOutput(os.Stdout)
+	// disable log output when the test has completed
+	defer func() {
+		log.SetOutput(ioutil.Discard)
+		logrus.SetOutput(ioutil.Discard)
+	}()
+	RetryCfg = RetryConfig{
+		NumberOfRetries:     2,
+		RetryDelayInSeconds: 1,
+	}
+	util := newKubeUtil()
+	ecrClient := newFakeFailingEcrClient()
+	gcrClient := newFakeFailingGcrClient()
 	dprClient := newFakeFailingDprClient()
 	awsAccountIDs = []string{""}
 	c := controller{util, ecrClient, gcrClient, dprClient}
