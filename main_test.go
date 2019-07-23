@@ -26,6 +26,13 @@ import (
 func init() {
 	log.SetOutput(ioutil.Discard)
 	logrus.SetOutput(ioutil.Discard)
+	// don't use any retries during testing until we explicitly want to
+	RetryCfg = RetryConfig{
+		Type:                "simple",
+		NumberOfRetries:     0,
+		RetryDelayInSeconds: 1,
+	}
+	SetupRetryTimer()
 }
 
 type fakeKubeClient struct {
@@ -66,7 +73,7 @@ func (f *fakeSecrets) Create(secret *v1.Secret) (*v1.Secret, error) {
 	_, ok := f.store[secret.Name]
 
 	if ok {
-		return nil, fmt.Errorf("Secret %v already exists", secret.Name)
+		return nil, fmt.Errorf("secret %v already exists", secret.Name)
 	}
 
 	f.store[secret.Name] = secret
@@ -77,7 +84,7 @@ func (f *fakeSecrets) Update(secret *v1.Secret) (*v1.Secret, error) {
 	_, ok := f.store[secret.Name]
 
 	if !ok {
-		return nil, fmt.Errorf("Secret: %v not found", secret.Name)
+		return nil, fmt.Errorf("secret %v not found", secret.Name)
 	}
 
 	f.store[secret.Name] = secret
@@ -88,7 +95,7 @@ func (f *fakeSecrets) Get(name string) (*v1.Secret, error) {
 	secret, ok := f.store[name]
 
 	if !ok {
-		return nil, fmt.Errorf("Secret with name: %v not found", name)
+		return nil, fmt.Errorf("secret with name '%v' not found", name)
 	}
 
 	return secret, nil
@@ -108,7 +115,7 @@ func (f *fakeServiceAccounts) Get(name string) (*v1.ServiceAccount, error) {
 	serviceAccount, ok := f.store[name]
 
 	if !ok {
-		return nil, fmt.Errorf("Failed to find service account: %v", name)
+		return nil, fmt.Errorf("failed to find service account '%v'", name)
 	}
 
 	return serviceAccount, nil
@@ -118,7 +125,7 @@ func (f *fakeServiceAccounts) Update(serviceAccount *v1.ServiceAccount) (*v1.Ser
 	serviceAccount, ok := f.store[serviceAccount.Name]
 
 	if !ok {
-		return nil, fmt.Errorf("Service account: %v not found", serviceAccount.Name)
+		return nil, fmt.Errorf("service account '%v' not found", serviceAccount.Name)
 	}
 
 	f.store[serviceAccount.Name] = serviceAccount
@@ -137,7 +144,7 @@ func (f *fakeServiceAccounts) Delete(name string, options *v1.DeleteOptions) err
 	_, ok := f.store[name]
 
 	if !ok {
-		return fmt.Errorf("Service account: %v not found", name)
+		return fmt.Errorf("service account '%v' not found", name)
 	}
 
 	delete(f.store, name)
@@ -153,7 +160,7 @@ func (f *fakeServiceAccounts) List(opts v1.ListOptions) (*v1.ServiceAccountList,
 func (f *fakeServiceAccounts) Watch(opts v1.ListOptions) (watch.Interface, error) { return nil, nil }
 
 func (f *fakeNamespaces) List(opts v1.ListOptions) (*v1.NamespaceList, error) {
-	namespaces := []v1.Namespace{}
+	namespaces := make([]v1.Namespace, 0)
 
 	for _, v := range f.store {
 		namespaces = append(namespaces, v)
@@ -183,11 +190,11 @@ func (f *fakeEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenIn
 	if len(input.RegistryIds) == 2 {
 		return &ecr.GetAuthorizationTokenOutput{
 			AuthorizationData: []*ecr.AuthorizationData{
-				&ecr.AuthorizationData{
+				{
 					AuthorizationToken: aws.String("fakeToken1"),
 					ProxyEndpoint:      aws.String("fakeEndpoint1"),
 				},
-				&ecr.AuthorizationData{
+				{
 					AuthorizationToken: aws.String("fakeToken2"),
 					ProxyEndpoint:      aws.String("fakeEndpoint2"),
 				},
@@ -196,7 +203,7 @@ func (f *fakeEcrClient) GetAuthorizationToken(input *ecr.GetAuthorizationTokenIn
 	}
 	return &ecr.GetAuthorizationTokenOutput{
 		AuthorizationData: []*ecr.AuthorizationData{
-			&ecr.AuthorizationData{
+			{
 				AuthorizationToken: aws.String("fakeToken"),
 				ProxyEndpoint:      aws.String("fakeEndpoint"),
 			},
@@ -256,55 +263,55 @@ func newKubeUtil() *k8sutil.K8sutilInterface {
 func newFakeKubeClient() k8sutil.KubeInterface {
 	return &fakeKubeClient{
 		secrets: map[string]*fakeSecrets{
-			"namespace1": &fakeSecrets{
+			"namespace1": {
 				store: map[string]*v1.Secret{},
 			},
-			"namespace2": &fakeSecrets{
+			"namespace2": {
 				store: map[string]*v1.Secret{},
 			},
-			"kube-system": &fakeSecrets{
+			"kube-system": {
 				store: map[string]*v1.Secret{},
 			},
 		},
 		namespaces: &fakeNamespaces{store: map[string]v1.Namespace{
-			"namespace1": v1.Namespace{
+			"namespace1": {
 				ObjectMeta: v1.ObjectMeta{
 					Name: "namespace1",
 				},
 			},
-			"namespace2": v1.Namespace{
+			"namespace2": {
 				ObjectMeta: v1.ObjectMeta{
 					Name: "namespace2",
 				},
 			},
-			"kube-system": v1.Namespace{
+			"kube-system": {
 				ObjectMeta: v1.ObjectMeta{
 					Name: "kube-system",
 				},
 			},
 		}},
 		serviceaccounts: map[string]*fakeServiceAccounts{
-			"namespace1": &fakeServiceAccounts{
+			"namespace1": {
 				store: map[string]*v1.ServiceAccount{
-					"default": &v1.ServiceAccount{
+					"default": {
 						ObjectMeta: v1.ObjectMeta{
 							Name: "default",
 						},
 					},
 				},
 			},
-			"namespace2": &fakeServiceAccounts{
+			"namespace2": {
 				store: map[string]*v1.ServiceAccount{
-					"default": &v1.ServiceAccount{
+					"default": {
 						ObjectMeta: v1.ObjectMeta{
 							Name: "default",
 						},
 					},
 				},
 			},
-			"kube-system": &fakeServiceAccounts{
+			"kube-system": {
 				store: map[string]*v1.ServiceAccount{
-					"default": &v1.ServiceAccount{
+					"default": {
 						ObjectMeta: v1.ObjectMeta{
 							Name: "default",
 						},
@@ -691,8 +698,8 @@ func TestDefaultAwsRegionFromArgs(t *testing.T) {
 func TestAwsRegionFromEnv(t *testing.T) {
 	expectedRegion := "us-steve-1"
 
-	os.Setenv("awsaccount", "12345678")
-	os.Setenv("awsregion", expectedRegion)
+	_ = os.Setenv("awsaccount", "12345678")
+	_ = os.Setenv("awsregion", expectedRegion)
 	validateParams()
 
 	assert.Equal(t, expectedRegion, *argAWSRegion)
@@ -701,7 +708,7 @@ func TestAwsRegionFromEnv(t *testing.T) {
 func TestGcrURLFromEnv(t *testing.T) {
 	expectedURL := "http://test.me"
 
-	os.Setenv("gcrurl", "http://test.me")
+	_ = os.Setenv("gcrurl", "http://test.me")
 	validateParams()
 
 	assert.Equal(t, expectedURL, *argGCRURL)
@@ -722,6 +729,56 @@ func TestPassingGcrPassingEcrStillSucceeds(t *testing.T) {
 	util := newKubeUtil()
 	ecrClient := newFakeFailingEcrClient()
 	gcrClient := newFakeGcrClient()
+	dprClient := newFakeFailingDprClient()
+	awsAccountIDs = []string{""}
+	c := controller{util, ecrClient, gcrClient, dprClient}
+
+	process(t, &c)
+}
+
+func TestControllerGenerateSecretsSimpleRetryOnError(t *testing.T) {
+	// enable log output for this test
+	log.SetOutput(os.Stdout)
+	logrus.SetOutput(os.Stdout)
+	// disable log output when the test has completed
+	defer func() {
+		log.SetOutput(ioutil.Discard)
+		logrus.SetOutput(ioutil.Discard)
+	}()
+	RetryCfg = RetryConfig{
+		Type:                "simple",
+		NumberOfRetries:     2,
+		RetryDelayInSeconds: 1,
+	}
+	SetupRetryTimer()
+	util := newKubeUtil()
+	ecrClient := newFakeFailingEcrClient()
+	gcrClient := newFakeFailingGcrClient()
+	dprClient := newFakeFailingDprClient()
+	awsAccountIDs = []string{""}
+	c := controller{util, ecrClient, gcrClient, dprClient}
+
+	process(t, &c)
+}
+
+func TestControllerGenerateSecretsExponentialRetryOnError(t *testing.T) {
+	// enable log output for this test
+	log.SetOutput(os.Stdout)
+	logrus.SetOutput(os.Stdout)
+	// disable log output when the test has completed
+	defer func() {
+		log.SetOutput(ioutil.Discard)
+		logrus.SetOutput(ioutil.Discard)
+	}()
+	RetryCfg = RetryConfig{
+		Type:                "exponential",
+		NumberOfRetries:     3,
+		RetryDelayInSeconds: 1,
+	}
+	SetupRetryTimer()
+	util := newKubeUtil()
+	ecrClient := newFakeFailingEcrClient()
+	gcrClient := newFakeFailingGcrClient()
 	dprClient := newFakeFailingDprClient()
 	awsAccountIDs = []string{""}
 	c := controller{util, ecrClient, gcrClient, dprClient}

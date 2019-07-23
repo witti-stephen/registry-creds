@@ -24,6 +24,9 @@ The following parameters are driven via Environment variables.
   - awsregion: (optional) Can override the default AWS region by setting this variable.
   - aws-assume-role (optional) can provide a role ARN that will be assumed for getting ECR authorization tokens
     > **Note:** The region can also be specified as an arg to the binary.
+  - TOKEN_RETRY_TYPE: The type of Timer to use when getting a registry token fails and must be retried; "simple" or "exponential" (default: simple)
+  - TOKEN_RETRIES: The number of times to retry getting a registry token if an error occurred (default: 3)
+  - TOKEN_RETRY_DELAY: The number of seconds to delay between successive retries at getting a registry token; applies to "simple" retry timer only (default: 5)
 
 ## How to setup running in AWS
 
