@@ -2,10 +2,12 @@
 # MAINTAINER: Steve Sloka <steve@stevesloka.com>
 # If you update this image please bump the tag value before pushing.
 
-TAG = 1.9
+TAG = 1.10
 PREFIX = upmcenterprises
 
 BIN = registry-creds
+
+GO111MODULE=off
 
 # docker build arguments for internal proxy
 ifneq ($(http_proxy),)
