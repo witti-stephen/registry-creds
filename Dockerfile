@@ -1,5 +1,5 @@
 FROM alpine:3.4
-MAINTAINER Steve Sloka <slokas@upmc.edu>
+MAINTAINER Steve Sloka <steve@stevesloka.com>
 
 RUN apk add --update ca-certificates && \
   rm -rf /var/cache/apk/*
